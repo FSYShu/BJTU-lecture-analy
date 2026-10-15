@@ -2,8 +2,35 @@
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from app.db.models import ParseTask
+from app.db.models import Course, ParseTask
 from app.db.models.task import TASK_STATUSES
+
+
+def ensure_parse_ready(course: Course) -> None:
+    """建任务前的配置前置校验（docs/09 A4-2）。
+
+    缺凭证时立刻返回可读错误，而不是等流水线跑到 ASR/LLM 步骤才失败——
+    那时任务已创建、视频可能已下载，浪费磁盘与时间。
+    """
+    from app.config import settings
+    from app.core.exceptions import AppError
+
+    missing: list[str] = []
+    if not settings.siliconflow_api_key:
+        missing.append("SILICONFLOW_API_KEY（ASR 与 LLM 共用）")
+    if course.source == "platform":
+        if not settings.platform_base_url:
+            missing.append("PLATFORM_BASE_URL")
+        if not (settings.platform_username and settings.platform_password):
+            missing.append(
+                "PLATFORM_USERNAME / PLATFORM_PASSWORD"
+                "（后台解析需自动登录课程平台；也可改用人工导入课程再解析）"
+            )
+    if missing:
+        raise AppError("AI_CREDENTIALS_MISSING", "解析任务缺少必要配置：" + "、".join(missing), 400)
+
+    if not (course.video_url or "").strip():
+        raise AppError("VIDEO_URL_MISSING", "课程缺少视频地址，无法开始解析", 400)
 
 
 def create_task(db: Session, course_id: int, user_id: int) -> ParseTask:

@@ -29,6 +29,8 @@ _TEMPERATURE = 0.3
 _DEDUPE_WINDOW_SEC = 30.0
 # 同名重点相隔超过该阈值时视为不同知识点（同一讲次里可能重复出现同名要点）
 _SAME_TITLE_WINDOW_SEC = 180.0
+# 长转写分段时相邻块的时间重叠窗口（秒），见 docs/09 A2-2
+_CHUNK_OVERLAP_SEC = 60.0
 
 _SYSTEM_PROMPT = (
     "你是课程内容分析助手。仅根据用户提供的课程转写文本生成结果，"
@@ -137,7 +139,11 @@ def _loads(content: str) -> dict:
 # 分段
 # --------------------------------------------------------------------------- #
 def _split_chunks(transcript_text: str) -> list[str]:
-    """按行（每行一句带时间戳的转写）切分成不超过上限的若干块。"""
+    """按行（每行一句带时间戳的转写）切分成不超过上限的若干块。
+
+    相邻块保留 ``_CHUNK_OVERLAP_SEC`` 秒的**重叠区**（docs/09 A2-2：重叠 30–60 秒，
+    避免跨块知识被切断）；重叠导致重复产出的重点由 ``_dedupe_keypoints`` 合并。
+    """
     limit = max(1000, settings.siliconflow_max_input_chars)
     if len(transcript_text) <= limit:
         return [transcript_text]
@@ -148,15 +154,50 @@ def _split_chunks(transcript_text: str) -> list[str]:
     for line in transcript_text.splitlines():
         if buffer and size + len(line) + 1 > limit:
             chunks.append("\n".join(buffer))
-            buffer, size = [], 0
+            buffer = _overlap_tail(buffer, limit)
+            size = sum(len(item) + 1 for item in buffer)
         buffer.append(line)
         size += len(line) + 1
     if buffer:
         chunks.append("\n".join(buffer))
 
-    logger.info("[llm] 转写 {} 字超出上限 {}，切分为 {} 块",
-                len(transcript_text), limit, len(chunks))
+    logger.info("[llm] 转写 {} 字超出上限 {}，切分为 {} 块（块间重叠 ≤{:.0f}s）",
+                len(transcript_text), limit, len(chunks), _CHUNK_OVERLAP_SEC)
     return chunks
+
+
+def _overlap_tail(lines: list[str], limit: int) -> list[str]:
+    """取上一块末尾时间跨度 ≤ 重叠窗口的行，作为下一块的开头。"""
+    if not lines:
+        return []
+
+    last_ts = _line_timestamp(lines[-1])
+    if last_ts is None:
+        tail = lines[-2:] if len(lines) > 2 else list(lines)
+    else:
+        tail = []
+        for line in reversed(lines):
+            timestamp = _line_timestamp(line)
+            if timestamp is None or last_ts - timestamp > _CHUNK_OVERLAP_SEC:
+                break
+            tail.append(line)
+        tail.reverse()
+
+    # 重叠区不超过上限的 1/3，避免切分停滞
+    while tail and sum(len(item) + 1 for item in tail) > limit // 3:
+        tail.pop(0)
+    return tail
+
+
+def _line_timestamp(line: str) -> float | None:
+    """解析转写行行首的 ``[起始秒]``。"""
+    match = re.match(r"\s*\[(\d+(?:\.\d+)?)\]", line)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
 
 
 # --------------------------------------------------------------------------- #
