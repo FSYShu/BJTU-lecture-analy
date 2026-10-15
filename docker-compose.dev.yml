@@ -1,0 +1,82 @@
+# ============================================================
+# 交大课录智析 · 开发环境一键启动
+# 用法：
+#   docker compose -f docker-compose.dev.yml up --build
+# 后端 API：http://localhost:8000/api/v1   （文档 /docs）
+# 前端页面：http://localhost:5173
+# 特性：源码挂载 + 热重载 + dev 依赖（pytest/ruff/mypy）
+# ============================================================
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: bjtu-la-backend-dev
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=dev
+      - DATABASE_URL=sqlite:///./storage/db/app.db
+      - STORAGE_ROOT=/app/storage
+      - VIDEO_CACHE_DIR=/app/storage/videos
+      - AUDIO_CACHE_DIR=/app/storage/audios
+      - LOG_DIR=/app/storage/logs
+      - EXPORT_DIR=/app/storage/exports
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      # 源码挂载：宿主改代码 → 容器内热重载
+      - ./backend/app:/app/app:cached
+      - ./backend/scripts:/app/scripts:cached
+      - ./backend/tests:/app/tests:cached
+      # 持久化存储
+      - ./storage:/app/storage
+      # 保留容器内 .venv（不被宿主覆盖）
+      - backend-venv:/app/.venv
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - bjtu-la-dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: bjtu-la-frontend-dev
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    ports:
+      - "5173:5173"
+    volumes:
+      # 源码挂载：宿主改代码 → 容器内热重载
+      - ./frontend/src:/app/src:cached
+      - ./frontend/public:/app/public:cached
+      - ./frontend/index.html:/app/index.html:cached
+      - ./frontend/vite.config.ts:/app/vite.config.ts:cached
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js:cached
+      - ./frontend/postcss.config.js:/app/postcss.config.js:cached
+      - ./frontend/tsconfig.json:/app/tsconfig.json:cached
+      - ./frontend/tsconfig.app.json:/app/tsconfig.app.json:cached
+      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json:cached
+      # 保留容器内 node_modules（不被宿主覆盖）
+      - frontend-node-modules:/app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bjtu-la-dev
+
+volumes:
+  backend-venv:
+  frontend-node-modules:
+
+networks:
+  bjtu-la-dev:
+    driver: bridge

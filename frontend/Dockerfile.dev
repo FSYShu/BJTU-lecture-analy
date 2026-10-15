@@ -1,0 +1,18 @@
+# ============================================================
+# 交大课录智析 · 前端开发 Dockerfile
+# vite dev server + 热重载
+# ============================================================
+
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# 源码在 docker-compose.dev.yml 中以 volume 挂载，此处不 COPY
+
+EXPOSE 5173
+
+# vite dev server，--host 允许容器外访问
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -1,0 +1,58 @@
+# ============================================================
+# 交大课录智析 · 一键容器化部署
+# 用法：
+#   1. 复制 .env.example 为 .env，填入真实值
+#   2. docker compose up --build -d
+# 后端 API：http://localhost:8000/api/v1   （文档 /docs）
+# 前端页面：http://localhost:3000
+# ============================================================
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bjtu-la-backend
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=prod
+      - DATABASE_URL=sqlite:///./storage/db/app.db
+      - STORAGE_ROOT=/app/storage
+      - VIDEO_CACHE_DIR=/app/storage/videos
+      - AUDIO_CACHE_DIR=/app/storage/audios
+      - LOG_DIR=/app/storage/logs
+      - EXPORT_DIR=/app/storage/exports
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - bjtu-la-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=/api/v1
+    container_name: bjtu-la-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bjtu-la-net
+
+networks:
+  bjtu-la-net:
+    driver: bridge

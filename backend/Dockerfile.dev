@@ -1,0 +1,36 @@
+# ============================================================
+# 交大课录智析 · 开发环境 Dockerfile
+# 含 dev 依赖（pytest/ruff/mypy），uvicorn --reload 热重载
+# ============================================================
+
+FROM python:3.12-slim
+
+# 系统依赖：ffmpeg + Playwright Chromium 运行时依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libasound2 libatspi2.0-0 libwayland-client0 \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# 依赖（含 dev 依赖）
+COPY pyproject.toml uv.lock ./
+COPY README.md ./
+RUN uv sync --frozen
+
+# Playwright 浏览器
+RUN uv run playwright install chromium
+
+# 源码在 docker-compose.dev.yml 中以 volume 挂载，此处不 COPY
+
+ENV PYTHONUNBUFFERED=1
+ENV APP_ENV=dev
+EXPOSE 8000
+
+# 热重载启动
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "app"]

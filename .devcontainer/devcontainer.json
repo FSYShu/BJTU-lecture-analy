@@ -1,0 +1,37 @@
+{
+  "name": "交大课录智析 开发环境",
+  "dockerComposeFile": "../docker-compose.dev.yml",
+  "service": "backend",
+  "workspaceFolder": "/app",
+  "forwardPorts": [8000, 5173],
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "ms-python.mypy-type-checker",
+    "ms-vscode.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "/app/.venv/bin/python",
+    "python.terminal.activateEnvironment": false,
+    "ruff.path": ["/app/.venv/bin/ruff"],
+    "editor.formatOnSave": true,
+    "[python]": {
+      "editor.defaultFormatter": "charliermarsh.ruff",
+      "editor.codeActionsOnSave": {
+        "source.fixAll.ruff": "explicit",
+        "source.organizeImports.ruff": "explicit"
+      }
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    }
+  },
+  "postCreateCommand": "uv sync && uv run playwright install chromium",
+  "remoteEnv": {
+    "VITE_API_BASE_URL": "http://localhost:8000/api/v1"
+  }
+}
