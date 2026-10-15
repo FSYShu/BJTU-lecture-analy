@@ -112,7 +112,7 @@ def _save_keypoints(
         key=lambda item: float(item.get("timestamp_sec", 0.0) or 0.0),
     )
     saved = 0
-    for index, item in enumerate(ordered):
+    for item in ordered:
         title = str(item.get("title", "")).strip()
         if not title:
             continue

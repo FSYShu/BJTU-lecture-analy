@@ -47,7 +47,6 @@ def parse_vtt(vtt_text: str) -> list[dict]:
     for raw_line in (vtt_text or "").splitlines():
         line = raw_line.strip()
         if not line:
-            current = None if current is None else current
             continue
         if line.upper().startswith("WEBVTT") or line.upper().startswith(("NOTE", "STYLE", "REGION")):
             current = None
