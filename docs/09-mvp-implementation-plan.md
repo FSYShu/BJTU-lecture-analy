@@ -874,116 +874,272 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 
 ---
 
-## 三、AI 相关后端（2 项）
+## 三、AI 相关后端（4 项）
+
+> **本节修订说明**：原稿只有 A1（讯飞 ASR）、A2（硅基流动 LLM）两个函数级草图，缺少「现有代码契约、长文本分段、结果校验与规范化、平台字幕/知识点接入、失败降级与测试」等环节，且草图与当前代码签名不一致（`transcribe` 现为**同步**函数；LLM 客户端是**三个业务函数 + `_chat`**，并不存在 `generate_analysis`）。
+> 本节依据 `docs/00`（FR-03/04/05/06、P0-03~P0-06、NFR-02/03/04/05/10、AC-02/03/04/05/06）、`docs/03`（四张结果表）、`docs/04`（Step 4/5/6 与状态机）、`docs/05`（异常降级与防幻觉）、`docs/10`（平台 API 3 知识点 / API 6 字幕）以及当前后端代码骨架重新补全为 4 项。
+
+### A0：AI 步骤现有骨架与接口契约（动手前必读）
+
+**已就绪、不要重复实现**：
+
+| 环节 | 位置 | 现状 |
+| --- | --- | --- |
+| ASR 步骤 | `backend/app/pipeline/steps/asr.py:7-13` | `run_asr(audio_path, task_id)` 已由 `@with_retry(max_attempts=settings.xfyun_asr_max_retry, exceptions=(TimeoutError, RuntimeError), step_name="asr")` 包裹 |
+| LLM 步骤 | `backend/app/pipeline/steps/llm.py:12-22` | `run_llm(transcripts, course, task_id)` 已接重试（`siliconflow_max_retry`），依次调用三个 LLM 函数 |
+| 重试策略 | `backend/app/pipeline/retry.py:11-22` | tenacity 指数退避（2s 起、上限 30s、`reraise=True`） |
+| 结果持久化 | `backend/app/pipeline/steps/persist.py:11-59` | 事务写入 transcripts/keypoints/summaries/mindmaps，统一写 `ai_generated=True`、`source_model`、`generated_at`；keypoint 时间戳越界时跳过（`:33-34`） |
+| 编排与状态 | `backend/app/pipeline/orchestrator.py:39-48` | `asr_running(50)` → `llm_running(75)` → `persisting(90)` → `succeeded(100)`；异常走 `mark_failed`（`:57-59`） |
+| 结果查询 API | `backend/app/api/v1/transcripts.py`、`keypoints.py`、`summaries.py`、`mindmaps.py` | 已实现，含 `require_course_access` 课程级鉴权 |
+| 平台数据源 | `backend/app/integrations/platform.py:275-285`（`list_keypoints`）、`:287-294`（`get_subtitle_vtt`） | 已实现，但**当前没有任何调用方**（A3 负责接入） |
+
+**待实现（即本节 A1~A4）**：
+
+| 环节 | 位置 | 现状 |
+| --- | --- | --- |
+| ASR 客户端 | `backend/app/integrations/xfyun_asr.py:10-18` | 同步 `transcribe(audio_path) -> list[dict]`，仅校验凭证（`:16-17`）后 `raise NotImplementedError`（`:18`） |
+| LLM 客户端 | `backend/app/integrations/siliconflow_llm.py:7-36` | `_SYSTEM_PROMPT`（`:7-10`，防幻觉）+ `_chat` 桩（`:13-18`）+ 三个业务函数（`:21-36`，prompt 已写好但返回空值） |
+| 平台字幕/知识点接入 | `backend/app/pipeline/steps/metadata.py:10-19` | 只回写 `title`/`duration_sec`，未取 VTT/zsd，也没有保存 `rpId` |
+| 校验/降级/测试 | `retry.py`、`orchestrator.py`、`backend/tests/test_pipeline/`（目前仅有 `__init__.py`） | 429、整任务超时、并发上限、AI 单测均未落地 |
+
+**接口契约（实现时必须遵守，否则会波及已就绪代码）**：
+
+| 契约 | 具体约定 |
+| --- | --- |
+| ASR 客户端签名 | `def transcribe(audio_path: str) -> list[dict]`，**同步**（与 `download.py`/`audio.py` 一致）。不要改成 `async`，否则 `asr.run_asr` 与编排层都要同步改动 |
+| 转写元素字段 | `{"text": str, "start_sec": float, "end_sec": float}`（`persist.py:27` 直接读取）；`seq_index` 由 `persist.py:26` 按顺序生成，ASR 不必返回 |
+| 重点元素字段 | `title` / `category` / `summary` / `timestamp_sec` / `source_transcript_ids`（`persist.py:36-40`） |
+| 总结字段 | `overview` / `chapter_points` / `key_details` / `review_hints`（`persist.py:45-48`） |
+| 导图字段 | `root_topic` / `nodes`（`persist.py:54-55`），`nodes` 为两级结构 `[{module, knowledge_points:[{name, timestamp_sec}]}]` |
+| 枚举与范围约束 | `category ∈ {concept, formula, example, exam_point}`（`docs/03:121`）；`0 ≤ timestamp_sec ≤ duration_sec`（`docs/03:130`、AC-03-03）；`0 ≤ start_sec < end_sec ≤ duration_sec`（AC-06-02） |
+| 来源标识 | ASR：`source_model='xfyun-asr'`、`ai_generated=True`（`persist.py:28`）；LLM：`ai_generated=True`、`source_model=settings.siliconflow_model`（`persist.py:39/49/56`）；平台数据：`ai_generated=False`（`docs/03:131`、`docs/10:977`） |
+| 任务状态 | `asr_running` / `llm_running` / `persisting`（`docs/03:76`、`docs/04:96-101`）由编排层写入，AI 客户端不要自行改任务状态 |
+
+**范围边界**：P1 的 AI 能力——术语库与术语校正（FR-15/P1-01，对应 AC-06-06 见 `docs/00:311`）、字幕与导图导出（FR-11/P1-02~03）、复习题生成（FR-12/P1-04）、课内关键词检索（FR-09/P1-05）——MVP 只预留目录、不编码（`docs/08:22-46`），本节不含其实现；需求中检索定义为**关键词检索**，不引入向量/embedding。
 
 ### A1：讯飞 ASR API 调用
 
-- **位置**：`backend/app/integrations/xfyun_asr.py:18`
-- **现状**：`NotImplementedError`
-- **方案**：对接讯飞语音听写长音频 API
+- **位置**：`backend/app/integrations/xfyun_asr.py:10-18`
+- **现状**：`transcribe()` 仅做凭证校验后 `raise NotImplementedError`；而 `asr.run_asr` 的重试、编排层的 `asr_running(50)` 状态、`persist.py` 的入库都已就绪，**实际只需把 `transcribe` 填实**
+- **目标**：输入 `storage/audios/{task_id}.wav`（16kHz 单声道，已由 `audio.extract_and_denoise` 降噪），输出句级时间戳转写 `[{text, start_sec, end_sec}]`，满足 FR-03、AC-02-01~05、AC-06-01~02
+
+**实现步骤**：
+
+1. **参数与语言**：显式传入 `settings.xfyun_asr_lang`（`config.py:37`、`.env.example:44`）选择中文/英文模型，否则英文课程识别质量会下降。
+2. **鉴权签名**：按 `xfyun_asr.py:13` 的 TODO 用 HMAC + Base64 生成签名，请求携带 `appId` 与 `ts`/`signa`。
+3. **上传音频**：先校验文件存在、格式与大小在接口限制内；超过单文件上限时按静音边界**分片**上传（长音频接口要求）。
+4. **轮询结果**：用上传返回的任务 ID 轮询，间隔 5s；轮询总时长受 `settings.xfyun_asr_timeout`（`config.py:38`）与整任务 `TASK_TOTAL_TIMEOUT` 双重约束。**注意**：`settings.xfyun_asr_max_retry`（`config.py:39`）已被 `asr.py:7-11` 的重试装饰器占用，轮询次数不要再复用它，否则最坏耗时 = 轮询次数 × 重试次数 × 单次超时。
+5. **解析结果**：把返回的 lattice / `bestPath` 中词级 `bg`/`ed`（开始/结束）按标点与停顿聚合为**句级** `{text, start_sec, end_sec}`（秒，保留 2 位小数）。
+6. **结果校验**（AC-06-02、NFR-02）：句级时间戳单调不减、`start_sec < end_sec`、不超过课程 `duration_sec`；越界句截断到 `duration_sec` 并告警；相邻空洞 > 10s 记 warning 便于排查。
+
+**代码骨架**（保持现有同步签名）：
 
 ```python
-import httpx
-import hashlib
-import hmac
-import base64
-import time
-from app.config import settings
-
-async def transcribe(audio_path: str) -> list[dict]:
-    """讯飞 ASR：音频 → 句级时间戳字幕。
-
-    返回 [{"text": "...", "start_sec": 12.5, "end_sec": 15.3}, ...]
-    """
-    # 1. 生成 HMAC-SHA256 签名
-    ts = str(int(time.time()))
-    signa = hmac.new(
-        settings.xfyun_api_secret.encode(),
-        (settings.xfyun_app_id + ts).encode(),
-        hashlib.sha256,
-    ).digest()
-    signa = base64.b64encode(signa).decode()
-
-    # 2. 上传音频文件（讯飞长音频接口要求先上传）
-    async with httpx.AsyncClient(timeout=settings.xfyun_asr_timeout) as c:
-        with open(audio_path, "rb") as f:
-            upload_resp = await c.post(
-                "https://api.xfyun.cn/v1/audios",
-                headers={"X-Appid": settings.xfyun_app_id, "X-Signa": signa},
-                files={"file": f},
-            )
-        upload_resp.raise_for_status()
-        audio_id = upload_resp.json()["audioId"]
-
-        # 3. 创建转写任务
-        task_resp = await c.post(
-            "https://api.xfyun.cn/v1/asr",
-            headers={"X-Appid": settings.xfyun_app_id, "X-Signa": signa},
-            json={"audio_id": audio_id},
-        )
-        task_resp.raise_for_status()
-        order_id = task_resp.json()["orderId"]
-
-        # 4. 轮询结果（每 5s 一次，最多重试 xfyun_asr_max_retry 次）
-        for _ in range(settings.xfyun_asr_max_retry):
-            await asyncio.sleep(5)
-            r = await c.get(f"https://api.xfyun.cn/v1/asr/{order_id}")
-            if r.json().get("status") == 3:  # 完成
-                return _parse_xfyun_result(r.json())
-    raise RuntimeError("ASR 转写超时")
-
-
-def _parse_xfyun_result(data: dict) -> list[dict]:
-    """解析讯飞返回的 lattice JSON → [{"text", "start_sec", "end_sec"}]。"""
-    # 解析 bestPath 中的 word 列表，提取 text + bg（开始）+ ed（结束）
-    ...
+def transcribe(audio_path: str) -> list[dict]:
+    """讯飞 ASR：音频 → 句级时间戳转写 [{"text", "start_sec", "end_sec"}]。"""
+    # 1) 签名：ts + appId + secret（算法以控制台开通的接口为准）
+    # 2) 上传：files={"file": open(audio_path, "rb")}，带 fileName/fileSize/duration/language
+    # 3) 轮询：interval=5s，deadline 由 xfyun_asr_timeout / TASK_TOTAL_TIMEOUT 控制
+    # 4) 解析：lattice → bestPath → 词级 bg/ed → 聚合为句级
+    # 5) 校验：单调递增、0 ≤ start < end ≤ duration_sec、空洞告警
+    return sentences
 ```
 
-- **补充**：转写完成后与平台 API 6 已有 VTT 字幕做时间点对齐校验（偏差 ≤ 2s），优先使用平台字幕填充空缺段
+**配置项**：`XFYUN_APP_ID` / `XFYUN_API_KEY` / `XFYUN_API_SECRET`、`XFYUN_ASR_LANG`、`XFYUN_ASR_TIMEOUT`、`XFYUN_ASR_MAX_RETRY`（`.env.example:39-48`、`docs/06:39-45`）。
+
+**注意事项**：
+
+- 长音频转写（语音转写 / LFASR）与实时听写（IAT）是**两套接口，域名、路径、签名算法都不同**。原稿写的 `https://api.xfyun.cn/v1/audios` + `X-Appid/X-Signa` 请求头，与代码里 `lattice`/`bestPath` 的解析要求并不匹配，实现前必须以控制台实际开通的接口文档为准（若签名实为 `HmacSHA1(MD5(appId+ts), secretKey)`，就不是 SHA256）。
+- 长音频接口通常只用到 `APPID + API_SECRET`，`XFYUN_API_KEY` 可能不参与签名：配置保留以便将来切换接口，但不要假定三者都必需。
+- 降噪与重采样已在 Step 3 的 `audio.extract_and_denoise` 完成，ASR 侧不要重复处理音频。
+- 失败时必须抛出 `TimeoutError` 或 `RuntimeError`，否则不会被 `asr.py:9` 的 `exceptions=(TimeoutError, RuntimeError)` 捕获、也就不会触发重试。
+- **实现前需同步修正的两处细节**：`xfyun_asr.py:16` 目前只校验 `xfyun_app_id` / `xfyun_api_key`，未校验签名必需的 `xfyun_api_secret`；`:5` 的 `import httpx` 目前完全未使用，实现后才会用上。
+- **占位实现会被重试放大**：`NotImplementedError` 是 `RuntimeError` 的子类，会被 `asr.py:9` 的 `exceptions=(TimeoutError, RuntimeError)` 捕获，所以现在跑流水线会先白等一轮指数退避才失败；填实实现后不受影响。
 
 ### A2：硅基流动 LLM API 调用
 
-- **位置**：`backend/app/integrations/siliconflow_llm.py:18`
-- **现状**：`NotImplementedError`
-- **方案**：对接硅基流动 Chat Completions API，一次调用生成重点/总结/思维导图
+- **位置**：`backend/app/integrations/siliconflow_llm.py:7-36`
+- **现状**：`_SYSTEM_PROMPT`（`:7-10`）与三个业务函数的 prompt（`:22`、`:28`、`:34`）都已写好，但 `_chat`（`:13-18`）是桩，三个函数调完 `_chat` 后**丢弃返回值**、恒返回 `[]` / `{}`；`llm.run_llm`（`llm.py:12-22`）的重试与编排状态已就绪
+- **目标**：以转写为**唯一输入**生成重点时间点、分层总结、两级思维导图（FR-04/05/06、P0-04~P0-06），并满足 `docs/00:129` 的"大模型按文本分段"
+
+**A2-1 输入必须带时间戳（当前实现的缺陷）**
+
+`llm.py:18` 现在是 `text = "\n".join(t["text"] for t in transcripts)`，只有文本、没有时间；而 `siliconflow_llm.py:9` 的系统提示要求"所有时间点必须来自转写提供的时间戳"，三个 prompt 也都要求返回 `timestamp_sec`，AC-03-04/AC-05-05 还要求节点能跳转（NFR-02 偏差 ≤ 2s）。**没有时间信息的输入，模型只能编造时间点。** 必须先改输入构造，例如：
 
 ```python
-import httpx
+text = "\n".join(f"[{t['start_sec']:.1f}] {t['text']}" for t in transcripts)
+```
+
+**A2-2 长文本分段（60–120 分钟课程必需）**
+
+单节回放的转写约 0.8–2 万字，一次全量投喂会遇到上下文上限、时延与成本问题（`docs/00:98` NFR-10 按量付费、`docs/00:378` 成本监控）。建议：
+
+1. 先用整段模式跑通；当转写字符数超过阈值（建议 12000 字）再切分段模式。
+2. 分段：按时间窗口 10–15 分钟切块，相邻块重叠 30–60 秒，避免跨块知识被截断。
+3. map→reduce：每块分别抽重点/总结要点，再合并去重（`timestamp_sec` 邻近的合并）、全局按时间重新排序。
+4. 成本与调用次数：记录每次调用的 `model`、输入字符数、耗时，便于估算用量与配额。
+
+**A2-3 `_chat` 实现要点**
+
+`settings.siliconflow_base_url` + `/chat/completions`；`Authorization: Bearer <SILICONFLOW_API_KEY>`；`model=settings.siliconflow_model`；`messages=[{"role":"system","content":_SYSTEM_PROMPT},{"role":"user","content":user_prompt}]`（**system 角色不能省**，防幻觉约束就在这里）；`temperature=0.3`；`response_format={"type":"json_object"}`；超时用 `settings.siliconflow_timeout`（`config.py:44`）。
+
+**A2-4 JSON 解析容错**
+
+模型可能返回 ```json 围栏、前后解释文字或截断的 JSON。解析顺序：去围栏 → 截取第一个 `{` 到最后一个 `}` → `json.loads`；失败时把报错信息回灌重试一次；仍失败则抛 `RuntimeError`，交给 `llm.py` 的重试与失败处理。
+
+**A2-5 结果规范化（防幻觉的真正落地环节）**
+
+| 规范化项 | 规则 | 依据 |
+| --- | --- | --- |
+| `category` | 必须落在 `KEYPOINT_CATEGORIES = ("concept","formula","example","exam_point")` 内（`db/models/keypoint.py:9`），非法值归为 `concept`；`category` 列在模型中可空且无 CHECK 约束（`keypoint.py:24`），校验只能放在代码里 | `docs/03:121` |
+| `timestamp_sec` | 缺失或越界时对齐到最接近的转写句 `start_sec`；仍无匹配则丢弃该条 | AC-03-03、AC-03-06 |
+| `source_transcript_ids` | **不要信任模型输出**：由本地用 `timestamp_sec` 匹配 ± `TIMESTAMP_TOLERANCE_SEC`（2s）内的转写句 id 生成 | `docs/03:126`、`docs/05:49` |
+| 思维导图结构 | 强制两级 `{root_topic, nodes:[{module, knowledge_points:[{name, timestamp_sec}]}]}`，多余层级拍平 | `docs/03:159`、AC-05-01/02 |
+| 空结果 | 允许返回空列表/空对象，前端按"暂无"提示展示；**不得**用其他课程内容或占位假数据填充 | AC-03-06、AC-04-07、AC-05-06 |
+
+**代码骨架**（保持现有三个函数契约，不再引入 `generate_analysis`）：
+
+```python
 import json
+import httpx
 from app.config import settings
 
-async def generate_analysis(transcript_text: str) -> dict:
-    """硅基流动 LLM：字幕文本 → 重点 + 总结 + 思维导图。
-
-    返回 {"keypoints": [...], "summary": {...}, "mindmap": {...}}
-    """
-    prompt = f"""你是课堂分析助手。以下是一段课堂字幕，请分析并返回 JSON：
-{{
-  "keypoints": [{{"timestamp_sec": 120, "category": "concept", "title": "...", "summary": "..."}}],
-  "summary": {{"overview": "...", "chapter_points": [...], "key_details": [...], "review_hints": [...]}},
-  "mindmap": {{"root_topic": "...", "nodes": [{{"module": "...", "knowledge_points": [{{"name": "...", "timestamp_sec": 120}}]}}]}}
-}}
-
-字幕内容：
-{transcript_text}
-"""
-    async with httpx.AsyncClient(timeout=settings.siliconflow_timeout) as c:
-        resp = await c.post(
+def _chat(user_prompt: str) -> str:
+    if not settings.siliconflow_api_key:
+        raise RuntimeError("硅基流动 API Key 未配置")
+    with httpx.Client(timeout=settings.siliconflow_timeout) as c:
+        resp = c.post(
             f"{settings.siliconflow_base_url}/chat/completions",
             headers={"Authorization": f"Bearer {settings.siliconflow_api_key}"},
             json={
                 "model": settings.siliconflow_model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
                 "temperature": 0.3,
                 "response_format": {"type": "json_object"},
             },
         )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        resp.raise_for_status()   # 429/5xx 的等待重试见 A4-2
+        return resp.json()["choices"][0]["message"]["content"]
+
+
+def _loads(content: str) -> dict:
+    """去 ```json 围栏、截取首尾花括号后解析；失败抛出便于重试。"""
+    ...
+
+# 三个函数必须改为使用 _chat 的返回值并做规范化：
+#   extract_keypoints -> [{"title", "category", "summary", "timestamp_sec", "source_transcript_ids"}]
+#   generate_summary  -> {"overview", "chapter_points", "key_details", "review_hints"}
+#   generate_mindmap  -> {"root_topic", "nodes"}
 ```
 
-- **补充**：生成后与平台 API 3 已有知识点（zsd）做时间点对齐校验（偏差 ≤ 2s），平台知识点设 `ai_generated=False, source_model='platform-zsd'` 与 LLM 结果并存
+**配置与一致性注意**：`config.py:43` 的默认模型是 `deepseek-ai/DeepSeek-V3`，而 `.env.example:54` 与 `docs/06:52` 写的是 `Qwen/Qwen3-8B`（`docs/01:25` 又写"DeepSeek/Qwen"、`docs/03:125` 以 `deepseek-v3` 作为 `source_model` 示例）。由于 `persist.py:39/49/56` 会把 `settings.siliconflow_model` 直接写进 `source_model`，**这四处口径必须先统一**，否则同一批数据的来源标识会不一致。
+
+### A3：平台字幕（VTT）与知识点（zsd）接入
+
+- **位置**：`backend/app/integrations/platform.py:275-285`（`list_keypoints`，API 3）、`:287-294`（`get_subtitle_vtt`，API 6）——两者**已实现但全项目无调用方**；接入点在 `pipeline/steps/metadata.py`、Step 4 之前与 Step 5 之后
+- **依据**：`docs/10:947-948`（zsd 作为 LLM 重点的补充/校验来源，与 LLM 结果做时间点对齐校验，偏差 ≤ 2s；平台 VTT 可直接复用，作为 ASR 结果的补充/校验，无则走 ASR 生成）、`docs/10:977`（zsd 写入 keypoints：`timestamp_sec = zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`、`category` 按内容归类）、`docs/03:131`
+- **前置阻塞（必须先修）**：`metadata.py:16-17` 读取的是 `meta.get("title")` / `meta.get("duration_sec")`，但 `platform.fetch_course_meta()` 返回的是 `{"cookies","user_id","course","replays"}`（`platform.py:267-272`）——**键名不匹配**，且从未把三路流地址写入 `course.video_url`（而 `orchestrator.py:31` 依赖它）。这一处不修，A1/A2 在平台课程上根本跑不到
+
+**前置缺口：`rpId` 无处存放**
+
+API 3 / API 6 都需要 `videoId`（即 `rpId`）（`docs/10:205-206`），但 `courses` 表当前字段（`docs/03:36-47`）只有 `platform_course_id`（= `cId`），没有回放 id 字段。两种落地方式：
+
+1. **推荐**：给 `courses` 增加 `platform_replay_id`（TEXT），Step 1 取三路流地址时一并写入；A3、以及"重试复用缓存"都能直接复用。
+2. 临时方案：Step 1 把 `rpId` 放进任务上下文（内存）传递，不落库——但重试会新建任务（`docs/04:109-116`），上下文丢失，不满足"跳过 Step 1/2/3"的复用要求。
+
+**三个接入点**
+
+| 接入点 | 时机 | 动作 |
+| --- | --- | --- |
+| Step 1 元数据 | `metadata.fetch_metadata` | 修正键名映射，保存 `rpId`（可顺带预取 VTT/zsd 缓存到任务上下文） |
+| Step 4 之前 | ASR 之前 | 有平台 VTT → 解析为转写（`ai_generated=False`、`source_model='platform-vtt'`）；ASR 结果与之逐句对齐，缺失段落用 ASR 补全（`docs/10:948`） |
+| Step 5 之后 | LLM 之后、`persist` 之前 | zsd → keypoints（`timestamp_sec=zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`），与 LLM 重点按 ≤ `TIMESTAMP_TOLERANCE_SEC` 去重后**并存展示**（`docs/10:977`、`docs/03:131`） |
+
+**对齐与合并（伪代码）**
+
+```python
+def parse_vtt(vtt_text: str) -> list[dict]:        # VTT → [{text, start_sec, end_sec}]
+def map_zsd(zsd_items: list[dict]) -> list[dict]:   # zsd → [{title, category, summary, timestamp_sec, ai_generated=False}]
+def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[dict]:
+    """偏差 ≤ tol（默认 TIMESTAMP_TOLERANCE_SEC=2s）视为同一时间点：
+    平台条目保留（按平台时间点），AI 条目并入 summary 等补充信息，不重复打点。"""
+```
+
+**注意**：`platform.py` 这两个函数是 `async def`，而流水线与 `transcribe` / `_chat` 都是同步的；调用方式参照 `metadata.py:15` 的 `asyncio.run(...)` 先例，不要在已有事件循环内嵌套调用。
+
+### A4：结果校验、失败降级与测试
+
+- **位置**：`pipeline/retry.py`、`pipeline/orchestrator.py`、`pipeline/steps/persist.py`、`backend/tests/test_pipeline/`
+- **依据**：`docs/05:5-14`（外部 API 降级）、`docs/05:12`（429 按 `Retry-After`）、`docs/05:23-24`（整任务超时、并发上限）、`docs/05:49-52`（防幻觉与越界校验）、`docs/02:123`（流水线单测 mock 外部 API）、`docs/00:378-379`
+
+**A4-1 持久化前的校验清单**
+
+| 校验 | 规则 | 失败处理 | 依据 |
+| --- | --- | --- | --- |
+| 转写时间戳 | 单调不减、`0 ≤ start_sec < end_sec ≤ duration_sec` | 越界截断/丢弃 + warning | AC-06-02、NFR-02 |
+| 重点时间戳 | `0 ≤ timestamp_sec ≤ duration_sec` | 丢弃 + **告警**（`persist.py:33-34` 现在静默 `continue`，需补日志） | AC-03-03、`docs/05:51` |
+| `category` | 落在 `KEYPOINT_CATEGORIES` 白名单内（`keypoint.py:9`） | 归为 `concept` | `docs/03:121` |
+| 必填字段 | `text` / `title` / `timestamp_sec` / `start_sec` 等非空 | 丢弃该条并告警 | `docs/03:92-165` |
+| AI 标识 | `ai_generated` / `source_model` / `generated_at` 必须写入 | 视为 `PERSIST_FAIL` | `docs/00:377`、`docs/05:50` |
+| 空结果 | 允许为空并如实展示"暂无" | 不写占位假数据 | AC-03-06、AC-04-07、AC-05-06 |
+
+**A4-2 失败、重试与降级矩阵**
+
+| 场景 | 现状 | 待补 |
+| --- | --- | --- |
+| ASR 超时/报错 | `asr.py:7-11` 指数退避重试 `XFYUN_ASR_MAX_RETRY` 次；仍失败由 `orchestrator.py:57-59` 标 failed | 错误码固定为 `ASR_TIMEOUT` / `ASR_ERROR`（现在取异常类名大写，会得到 `TIMEOUTERROR`，与 `docs/03:79`、`docs/04:63` 不一致） |
+| LLM 超时/报错 | `llm.py:12-16` 重试 `SILICONFLOW_MAX_RETRY` 次 | 错误码固定为 `LLM_TIMEOUT` / `LLM_ERROR`；**部分失败降级**：重点/总结/导图任一失败时，已成功的结果先落库、失败项留空并在 `error_message` 说明，任务整体仍标 `failed` 供重试，且"已生成的部分结果不回滚丢失"（`docs/05:10`）——注意 `persist.save_results` 当前要求四类结果齐全，需要支持 `None` / 空值 |
+| 429 限流 | 未处理：`retry.py:16` 只对 `(TimeoutError, RuntimeError)` 重试，`httpx.HTTPStatusError`（429）不会重试 | 增加 429 分支，按 `Retry-After` 头等待后重试（`docs/05:12`） |
+| 整任务超时 | 未落地：`config.py:58` 有 `task_total_timeout`，全项目无使用 | 在编排层对下载+ASR+LLM 累计耗时设上限，超时标 `TOTAL_TIMEOUT`（`docs/05:23`） |
+| 并发上限 | 未落地：`config.py:59` 有 `task_max_concurrent`，`parse_worker.py` 未使用 | 限制同时运行的任务数，超出排队（`docs/05:24`、`docs/10:1016`） |
+| 重试复用缓存 | 未落地：`task_service.py:26` 复制了 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载，从不读取该字段 | 按 `docs/04:115` 跳过 Step 1/2/3 从失败步骤续跑；否则一次 LLM 阶段失败会连带重复消耗 ASR 额度 |
+| 凭证缺失 | `xfyun_asr.py:16-17`、`siliconflow_llm.py:14-15` 已抛 `RuntimeError` | 建议在建任务前前置校验，给出可读提示，而不是等到 ASR 步骤才失败 |
+
+**A4-3 可观测性与成本**
+
+- 每次 AI 调用记录：`task_id`、步骤名、模型、输入字符数（估算 token）、耗时、重试次数、返回条数——服务 NFR-10 与 `docs/00:378` 的"成本监控"（当前无任何 token/成本字段）。
+- 越界丢弃、时间戳空洞、空结果、平台对齐偏差 > 2s 均写 warning，便于试点期评估 NFR-03（字错率 ≤ 20%）与 NFR-04（重点有效性 ≥ 80%）。
+
+**A4-4 单元测试清单**
+
+`backend/tests/test_pipeline/` 目前只有 `__init__.py`，AI 相关测试覆盖为 0；`pyproject.toml:29` 已声明 `respx`（httpx mock）但全项目未使用，`conftest.py` 已提供内存 SQLite 的 `client` fixture，基础设施是现成的。按 `docs/02:123` 要求 mock 外部 API（不产生真实调用、不消耗额度）：
+
+| 测试 | 断言 |
+| --- | --- |
+| ASR 结果解析 | lattice 样例 → 句级时间戳正确、单调递增、范围合法 |
+| ASR 超时重试 | 连续失败按 `XFYUN_ASR_MAX_RETRY` 重试后抛错，落库错误码为 `ASR_TIMEOUT` |
+| LLM JSON 容错 | ```json 围栏 / 带解释文字 / 截断 三种输入下的解析与重试 |
+| 结果规范化 | 非法 `category` → `concept`；越界 `timestamp_sec` → 对齐或丢弃；`source_transcript_ids` 由本地生成 |
+| 部分失败降级 | 导图失败时重点与总结仍落库、任务标 failed、部分结果不丢 |
+| 持久化 | 四表字段与 `ai_generated`/`source_model`/`generated_at` 正确；越界 keypoint 被丢弃且有告警 |
+| 平台接入 | VTT 解析、zsd 映射、≤ 2s 去重合并 |
+
+**A4-5 验收对照**
+
+| 验收点 | 阈值 | 依据 |
+| --- | --- | --- |
+| 字幕/重点/导图跳转偏差 | ≤ 2s | NFR-02、`docs/00:90` |
+| 转写字错率 | ≤ 20% | NFR-03、`docs/00:91` |
+| 重点有效性 | ≥ 80% | NFR-04、`docs/00:92` |
+| 任务完成率 | ≥ 95% | NFR-05、`docs/00:93` |
+| 未完成结果不得标记为成功 | — | AC-02-06、`docs/00:242`、`docs/05:14` |
+| 时间点必须落在有效时长内 | — | AC-03-03、AC-06-02 |
+| 全部 AI 内容带生成标识 | 100% | `docs/00:377`、`docs/05:50` |
+
+### A5：实现前需统一的不一致项（本次检验结论）
+
+| 不一致项 | 事实 | 处理建议 |
+| --- | --- | --- |
+| 模型口径 | `config.py:43` = `deepseek-ai/DeepSeek-V3`；`.env.example:54` / `docs/06:52` = `Qwen/Qwen3-8B`；`docs/03:125` 示例用 `deepseek-v3` | 统一为同一个模型 id，并让 `source_model` 记录真实模型 |
+| 错误码 | `orchestrator.py:59` 用 `type(exc).__name__.upper()`；`docs/03:79`、`docs/04:43/53/63/78/87` 要求 `ASR_TIMEOUT`、`ASR_ERROR`、`LLM_TIMEOUT`、`LLM_ERROR`、`PERSIST_FAIL` 等固定码 | 在步骤层抛带 `error_code` 的异常，或维护异常类型 → 错误码映射表 |
+| 重试续跑 | `task_service.py:26` 复制 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载；`audio_cache_path` 未复制 | 与 `docs/04:115` 对齐，实现"跳过已完成的 Step 1/2/3" |
+| 平台元数据映射 | `metadata.py:16-17` 的键名与 `platform.py:267-272` 返回结构不匹配；`course.video_url` 未被写入 | 先修映射，否则 AI 链路在平台课程上不可达（前置阻塞） |
+| 已定义未使用的 AI 配置 | `config.py` 的 `xfyun_api_secret:36`、`xfyun_asr_lang:37`、`xfyun_asr_timeout:38`、`siliconflow_timeout:44`、`timestamp_tolerance_sec:60`，以及 `task_total_timeout:58`、`task_max_concurrent:59` | 在 A1/A2/A3/A4 中逐一接线，避免"配置写了但行为没变" |
+| 已定义未使用的常量 | `KEYPOINT_CATEGORIES`（`keypoint.py:9`）、`TASK_STATUSES`（`task.py:9-13`）除定义处外无引用，也未落成 DB CHECK | 在 A2-5 规范化与状态更新校验中使用 |
+| 平台知识点的 `source_transcript_ids` 恒为空 | `persist.py:40` 写入 `k.get("source_transcript_ids", [])`，而 LLM 结果恒为 `[]` | A2-5 的本地溯源生成落地后自然修复 |
 
 ---
 
@@ -991,8 +1147,12 @@ async def generate_analysis(transcript_text: str) -> dict:
 
 ```
 B1 CAS验证码 → B2 串联编排 → B3 视频下载 → B4 音频提取
-                                              ↓
-A1 讯飞ASR → A2 硅基LLM → B5 去重 → F1-F6 前端联调 → U0-U6 样式完善
+                                                ↓
+A1 讯飞ASR → A2 硅基LLM → A4 校验/降级/测试 → B5 去重 → F1-F6 前端联调 → U0-U6 样式完善
+     ↑
+A3 平台字幕/知识点接入（与 A1/A2 并行；需先修平台元数据映射）
 ```
 
 先打通后端数据链路（B1→B4→A1→A2），再做前端联调（F1-F6），最后补去重（B5）和样式完善（U0-U6）。
+
+AI 侧建议顺序：**A1**（先让 ASR 产出真实转写）→ **A2**（LLM 产出结构化结果，含 A2-1 时间戳注入）→ **A4** 的校验与部分失败降级（保证 AC-02-06 不被违反）→ **A3** 平台字幕/知识点接入（可与 A1 并行开发，但要等元数据映射修好、拿到真实 `rpId` 才能联调）；**A5** 的不一致项在动手前先统一。
