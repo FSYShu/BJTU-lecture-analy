@@ -19,6 +19,29 @@ class GrantIn(BaseModel):
     valid_until: datetime | None = None
 
 
+@router.get("/authorizations")
+def list_authorizations(admin: User = Depends(require_role("teacher", "admin")), db: Session = Depends(get_db)) -> list[dict]:
+    rows = (
+        db.query(CourseAuthorization, Course.title, User.username)
+        .join(Course, Course.id == CourseAuthorization.course_id)
+        .join(User, User.id == CourseAuthorization.user_id)
+        .order_by(CourseAuthorization.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": a.id,
+            "course_id": a.course_id,
+            "user_id": a.user_id,
+            "course_title": title,
+            "student_name": username,
+            "is_revoked": a.is_revoked,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a, title, username in rows
+    ]
+
+
 @router.post("/authorizations", status_code=201)
 def grant(body: GrantIn, admin: User = Depends(require_role("teacher", "admin")), db: Session = Depends(get_db)) -> dict:
     auth = authorization_service.grant(db, body.course_id, body.user_id, admin.id, body.valid_until)

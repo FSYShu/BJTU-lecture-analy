@@ -8,8 +8,10 @@ class CourseOut(BaseModel):
     teacher_name: str | None = None
     session_label: str | None = None
     duration_sec: int | None = None
+    video_url: str
     video_format: str | None = None
     source: str
+    platform_course_id: str | None = None
 
     class Config:
         from_attributes = True

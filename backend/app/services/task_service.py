@@ -31,6 +31,16 @@ def retry_task(db: Session, failed_task_id: int, user_id: int) -> ParseTask:
     return new_task
 
 
+def get_latest_task_by_course(db: Session, course_id: int) -> ParseTask | None:
+    """按课程查最新一条解析任务（用于详情页展示进度）。"""
+    return (
+        db.query(ParseTask)
+        .filter(ParseTask.course_id == course_id)
+        .order_by(ParseTask.id.desc())
+        .first()
+    )
+
+
 def update_status(db: Session, task_id: int, status: str, progress: int | None = None, current_step: str | None = None) -> None:
     task = db.get(ParseTask, task_id)
     if not task:

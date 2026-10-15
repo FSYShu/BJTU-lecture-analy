@@ -19,6 +19,14 @@ def list_courses(user: User = Depends(get_current_user), db: Session = Depends(g
     return course_service.list_accessible_courses(db, user)
 
 
+@router.get("/{course_id}", response_model=CourseOut)
+def get_course(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Course:
+    course = course_service.get_accessible_course(db, user, course_id)
+    if not course:
+        raise HTTPException(404, "课程不存在或未授权")
+    return course
+
+
 @router.post("/import", response_model=CourseOut, status_code=201)
 def import_course(body: CourseImportIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Course:
     return course_service.import_course(db, body, user)

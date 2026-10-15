@@ -12,6 +12,14 @@ from app.workers.parse_worker import run as parse_worker_run
 router = APIRouter()
 
 
+@router.get("/latest", response_model=TaskOut)
+def get_latest_task(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
+    task = task_service.get_latest_task_by_course(db, course_id)
+    if not task:
+        raise HTTPException(404, "该课程暂无解析任务")
+    return task
+
+
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
     task = db.get(ParseTask, task_id)

@@ -23,6 +23,25 @@ def list_accessible_courses(db: Session, user: User) -> list[Course]:
     return list(db.execute(stmt).scalars())
 
 
+def get_accessible_course(db: Session, user: User, course_id: int) -> Course | None:
+    """单条课程查询（带授权校验）。未授权返回 None。"""
+    if user.role in ("teacher", "admin"):
+        return db.get(Course, course_id)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(Course)
+        .join(CourseAuthorization, CourseAuthorization.course_id == Course.id)
+        .where(
+            Course.id == course_id,
+            CourseAuthorization.user_id == user.id,
+            CourseAuthorization.is_revoked == False,  # noqa: E712
+            CourseAuthorization.valid_from <= now,
+        )
+    )
+    return db.execute(stmt).scalars().first()
+
+
 def import_course(db: Session, body: CourseImportIn, user: User) -> Course:
     course = Course(
         title=body.title,

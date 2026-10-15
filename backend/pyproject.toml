@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "tenacity>=8.2,<9",
     "playwright>=1.64.0",
+    "bcrypt<4",
 ]
 
 [project.optional-dependencies]
