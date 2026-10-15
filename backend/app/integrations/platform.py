@@ -287,7 +287,7 @@ async def list_keypoints(cookies: dict, rp_id: str) -> list[dict]:
 async def get_subtitle_vtt(cookies: dict, rp_id: str) -> str:
     """API 6：获取平台已有 VTT 字幕。
 
-    平台已有字幕时可直接用，作为讯飞 ASR 结果的补充/校验；无则走 ASR 生成。
+    平台已有字幕时可直接用，作为硅基流动 ASR 结果的补充/校验；无则走 ASR 生成。
     返回 WebVTT 文本。
     """
     async with _client(cookies) as c:

@@ -63,7 +63,7 @@ def seed() -> None:
             ]
             for i, (s, e, txt) in enumerate(subs):
                 db.add(Transcript(task_id=task.id, course_id=target.id, seq_index=i, text=txt,
-                                  start_sec=s, end_sec=e, ai_generated=True, source_model="xfyun-lfasr"))
+                                  start_sec=s, end_sec=e, ai_generated=True, source_model="siliconflow-asr"))
 
             kps = [
                 ("傅里叶变换的定义", "concept", 13.0, "将时域函数分解为频域成分的积分变换。"),

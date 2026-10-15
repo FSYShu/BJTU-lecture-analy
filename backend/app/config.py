@@ -31,18 +31,26 @@ class Settings(BaseSettings):
     cache_retention_days: int = 7
     cleanup_audio_after_task: bool = True
 
-    xfyun_app_id: str = ""
-    xfyun_api_key: str = ""
-    xfyun_api_secret: str = ""
-    xfyun_asr_lang: str = "zh-CN"
-    xfyun_asr_timeout: int = 120
-    xfyun_asr_max_retry: int = 3
-
+    # ---------- 硅基流动 AI（ASR + LLM 共用同一 API Key / Base URL）----------
     siliconflow_api_key: str = ""
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
-    siliconflow_model: str = "deepseek-ai/DeepSeek-V3"
+
+    # ASR（A1）：语音转写，输出句级时间戳
+    siliconflow_asr_model: str = "XingChenAGI/XingChenASR-V3.2-Ultra"
+    siliconflow_asr_timeout: int = 300
+    siliconflow_asr_max_retry: int = 3
+    # 长回放切片：单分片最长时长（秒）与最大体积（MB）
+    siliconflow_asr_chunk_seconds: int = 480
+    siliconflow_asr_chunk_max_mb: int = 20
+    # 接口不返回时间戳时，是否退回按字数估算时间轴（可用但精度下降）
+    siliconflow_asr_allow_estimated_timestamps: bool = True
+
+    # LLM（A2）：重点 / 分层总结 / 两级思维导图
+    siliconflow_model: str = "Qwen/Qwen3-8B"
     siliconflow_timeout: int = 180
     siliconflow_max_retry: int = 3
+    # 单次投喂的最大转写字符数，超出后按时间窗口分段做 map-reduce（docs/00:129）
+    siliconflow_max_input_chars: int = 12000
 
     platform_base_url: str = ""
     platform_video_formats: str = "mp4,flv,hls"
@@ -58,6 +66,8 @@ class Settings(BaseSettings):
     task_total_timeout: int = 3600
     task_max_concurrent: int = 2
     timestamp_tolerance_sec: int = 2
+    # 平台 VTT 字幕覆盖时长占比达到该阈值时直接复用，不再调用 ASR（docs/10:948）
+    vtt_min_coverage: float = 0.5
 
     oss_access_key_id: str = ""
     oss_access_key_secret: str = ""

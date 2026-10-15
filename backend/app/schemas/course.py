@@ -12,6 +12,7 @@ class CourseOut(BaseModel):
     video_format: str | None = None
     source: str
     platform_course_id: str | None = None
+    platform_replay_id: str | None = None
 
     class Config:
         from_attributes = True
