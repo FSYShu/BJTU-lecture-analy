@@ -37,3 +37,31 @@ def import_course(db: Session, body: CourseImportIn, user: User) -> Course:
     db.commit()
     db.refresh(course)
     return course
+
+
+def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Course:
+    """平台课程导入：按 platform_course_id 唯一索引去重，已存在则更新，不存在则新建。
+
+    meta 需包含 title / video_url（Course 必填字段）；teacher_name、session_label、
+    duration_sec、video_format 可选，值为 None 时跳过不覆盖。
+    """
+    existing = (
+        db.query(Course).filter(Course.platform_course_id == platform_course_id).first()
+    )
+    if existing:
+        for k, v in meta.items():
+            if v is not None:
+                setattr(existing, k, v)
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    course = Course(
+        platform_course_id=platform_course_id,
+        source="platform",
+        **meta,
+    )
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+    return course

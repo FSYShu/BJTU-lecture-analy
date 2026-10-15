@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     platform_video_formats: str = "mp4,flv,hls"
     platform_request_timeout: int = 60
     platform_cas_login_url: str = "https://mis.bjtu.edu.cn"
+    # 后台自动登录回退凭证（可选）：pipeline 无前端交互时使用；前台登录优先走 API 透传
+    platform_username: str = ""
+    platform_password: str = ""
 
     platform_captcha_mode: str = "manual"
     platform_cookie_ttl: int = 28800
