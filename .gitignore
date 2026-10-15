@@ -88,7 +88,7 @@ docker-data/
 tmp/
 temp/
 *.tmp
-# pip �� %%TEMP%% ����дʱ���ڵ�ǰĿ¼���������ʱĿ¼
+
+# pip 在 TEMP 目录不可写时会在当前目录创建解包临时目录（%TEMP% 权限异常时）
 pip-unpack-*/
 *.whl
-
