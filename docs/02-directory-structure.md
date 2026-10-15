@@ -103,13 +103,13 @@ BJTU-lecture-analy/
 │   │   │       ├── metadata.py              # ① 拉取回放元数据
 │   │   │       ├── download.py              # ② 视频下载（MP4/FLV/HLS）
 │   │   │       ├── audio.py                 # ③ 音频提取 + 基础降噪（ffmpeg）
-│   │   │       ├── asr.py                   # ④ 调用讯飞 ASR 转写
+│   │   │       ├── asr.py                   # ④ 调用硅基流动 ASR 转写
 │   │   │       ├── llm.py                   # ⑤ 调用大模型语义解析
 │   │   │       └── persist.py               # ⑥ 持久化结构化结果
 │   │   │
 │   │   ├── integrations/                    # 【外部 API 客户端】
 │   │   │   ├── __init__.py
-│   │   │   ├── xfyun_asr.py                 # 讯飞 ASR（带时间戳转写）
+│   │   │   ├── siliconflow_asr.py           # 硅基流动 ASR（XingChenASR，带时间戳转写）
 │   │   │   ├── siliconflow_llm.py           # 硅基流动大模型（DeepSeek/Qwen）
 │   │   │   └── platform.py                  # 课程平台对接（CAS 登录 + API 1/2/3/6：课次列表/三路流地址/平台知识点/平台字幕）
 │   │   │

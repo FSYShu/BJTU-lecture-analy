@@ -6,7 +6,7 @@
 
 | 风险 | 代码处理 | 位置 |
 | --- | --- | --- |
-| 讯飞 ASR 超时/中断 | `integrations/xfyun_asr.py` 设置 `XFYUN_ASR_TIMEOUT`；`pipeline/retry.py` 指数退避重试 `XFYUN_ASR_MAX_RETRY` 次；仍失败则任务 `failed`，`error_code=ASR_TIMEOUT`，保留已下载视频供重试 | integrations + pipeline |
+| 硅基流动 ASR 超时/中断 | `integrations/siliconflow_asr.py` 设置 `SILICONFLOW_ASR_TIMEOUT`；`pipeline/retry.py` 指数退避重试 `SILICONFLOW_ASR_MAX_RETRY` 次；仍失败则任务 `failed`，`error_code=ASR_TIMEOUT`，保留已下载视频供重试 | integrations + pipeline |
 | 硅基流动 LLM 超时/错误 | `integrations/siliconflow_llm.py` 设置 `SILICONFLOW_TIMEOUT`；重试 `SILICONFLOW_MAX_RETRY` 次；降级：若重点/总结/导图任一子任务失败，记录部分失败但任务整体可标记 `failed` 供重试，已生成的部分结果不回滚丢失 | integrations + pipeline |
 | 课程平台接口不可达 | `integrations/platform.py` 设置 `PLATFORM_REQUEST_TIMEOUT`；失败标记 `PLATFORM_UNREACHABLE`；MVP 可用单条人工导入替代（FR-01）| integrations |
 | API 限流/429 | retry.py 识别 429 状态码，按 `Retry-After` 头等待后重试 | pipeline/retry.py |
@@ -49,7 +49,7 @@
 | 大模型生成课程未出现的信息 | `pipeline/steps/llm.py` Prompt 明确"仅基于以下转写文本生成，不得引入外部知识"；结果记录 `source_transcript_ids` 溯源 | pipeline/steps/llm.py |
 | AI 内容无标识 | 所有 AI 生成记录 `ai_generated=1, source_model, generated_at`；响应 schema 强制返回这些字段，前端展示"AI 生成"标识 | db/models + schemas + 前端 |
 | 重点时间点越界 | 持久化前校验 `0 ≤ timestamp_sec ≤ duration_sec`，越界丢弃并告警（AC-03-03）| pipeline/steps/persist.py |
-| 跳转偏差超 2 秒 | ASR 句级时间戳与视频对齐；前端跳转用 `player.currentTime(t)`；`TIMESTAMP_TOLERANCE_SEC=2` 作为校验阈值（NFR-02）| integrations/xfyun_asr.py + 前端 |
+| 跳转偏差超 2 秒 | ASR 句级时间戳与视频对齐；前端跳转用 `player.currentTime(t)`；`TIMESTAMP_TOLERANCE_SEC=2` 作为校验阈值（NFR-02）| integrations/siliconflow_asr.py + 前端 |
 
 ## 六、安全与合规
 

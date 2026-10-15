@@ -25,7 +25,7 @@ dependencies = [
     # 鉴权
     "passlib[bcrypt]>=1.7,<2",
     "python-jose[cryptography]>=3.3,<4",
-    # HTTP 客户端（调用讯飞/硅基流动/课程平台）
+    # HTTP 客户端（调用硅基流动 ASR/LLM/课程平台）
     "httpx>=0.27,<0.28",
     # 视频/音频处理
     "ffmpeg-python>=0.2,<0.3",

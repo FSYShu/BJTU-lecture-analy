@@ -54,12 +54,12 @@
 └──────────────────────────┬──────────────────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Step 4  讯飞 ASR 转写    pipeline/steps/asr.py                        │
+│ Step 4  硅基流动 ASR 转写 pipeline/steps/asr.py                        │
 │   输入: audio_cache_path                                              │
-│   动作: 调用 integrations/xfyun_asr.py，输出句级时间戳转写             │
+│   动作: 调用 integrations/siliconflow_asr.py，输出句级时间戳转写        │
 │   产物: List[{seq_index, text, start_sec, end_sec}]                    │
 │   状态: → asr_running                                                  │
-│   重试: pipeline/retry.py 指数退避，最多 XFYUN_ASR_MAX_RETRY 次        │
+│   重试: pipeline/retry.py 指数退避，最多 SILICONFLOW_ASR_MAX_RETRY 次  │
 │   失败: ASR_TIMEOUT / ASR_ERROR → failed                               │
 │   降级: 多次重试仍失败 → 标记 failed，保留已下载视频，提示用户重试      │
 └──────────────────────────┬──────────────────────────────────────────┘

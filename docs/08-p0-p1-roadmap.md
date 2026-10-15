@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | P0-01 | 课程与回放入口 | `api/v1/courses.py`、`services/course_service.py`、`integrations/platform.py`（CAS 登录 + API 1 课次列表 + API 2 三路流地址 + API 3 平台知识点 + API 6 平台字幕）| `pages/CourseList.tsx` |
 | P0-02 | 视频处理任务 | `api/v1/tasks.py`、`services/task_service.py`、`pipeline/steps/download.py`、`audio.py`、`workers/parse_worker.py` | `components/TaskStatus/` |
-| P0-03 | AI 字幕 | `api/v1/transcripts.py`、`pipeline/steps/asr.py`、`integrations/xfyun_asr.py`、`db/models/transcript.py` | `components/Subtitle/` |
+| P0-03 | AI 字幕 | `api/v1/transcripts.py`、`pipeline/steps/asr.py`、`integrations/siliconflow_asr.py`、`db/models/transcript.py` | `components/Subtitle/` |
 | P0-04 | 重点时间点 | `api/v1/keypoints.py`、`pipeline/steps/llm.py`、`db/models/keypoint.py` | `components/Keypoints/` |
 | P0-05 | 课程总结 | `api/v1/summaries.py`、`db/models/summary.py` | `components/Summary/` |
 | P0-06 | 基硅思维导图 | `api/v1/mindmaps.py`、`db/models/mindmap.py` | `components/Mindmap/`（markmap）|

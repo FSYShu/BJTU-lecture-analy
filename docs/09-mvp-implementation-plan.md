@@ -2,6 +2,21 @@
 
 > 基于当前项目骨架盘点，按前端、纯后端、AI 相关后端三类分类，给出每项的实现方案。
 
+## 完成状态总览（截至 2026-10-15）
+
+| 分类 | 编号 | 任务 | 状态 | 备注 |
+|---|---|---|---|---|
+| 后端 | B1-B5 | 纯后端（CAS/编排/下载/音频/去重）| ✅ 全部已实现 | commit `ba2803d` |
+| AI | A0 | 骨架与接口契约 | ✅ 已就绪 | 重试/编排/持久化/查询 API 均已就绪 |
+| AI | A1 | 硅基流动 ASR API 调用 | ❌ 待实现 | `xfyun_asr.py:18` NotImplementedError（将改名 `siliconflow_asr.py`）|
+| AI | A2 | 硅基流动 LLM API 调用 | ❌ 待实现 | `siliconflow_llm.py:18` NotImplementedError |
+| AI | A3 | 平台字幕/知识点接入 | ❌ 待实现 | 函数已写但无调用方；元数据映射未修 |
+| AI | A4 | 校验/降级/测试 | ❌ 待实现 | tests/test_pipeline 仅有 `__init__.py` |
+| AI | A5 | 不一致项统一 | ❌ 待统一 | 模型口径/错误码/重试续跑/映射 |
+| 前端 | F1-F6 | 功能联调 | ✅ 全部已实现 | Player视频源/SeekContext联调/解析反馈/任务进度 |
+| 前端 | U0-U6 | 设计规范 | ⚠️ U0-U5 已实现，U6 待实现 | U6 暗色模式为 P1 低优先级 |
+| 前端 | — | typecheck | ✅ 通过 | `vite-env.d.ts` 已补齐；Mindmap onSeek 已接入 |
+
 ---
 
 ## 〇、开发环境部署
@@ -11,7 +26,7 @@
 ```bash
 git clone <repo>
 cd BJTU-lecture-analy
-cp .env.example .env          # 填入讯飞/硅基流动 API 凭证
+cp .env.example .env          # 填入硅基流动 API 凭证
 docker compose -f docker-compose.dev.yml up --build
 ```
 
@@ -51,7 +66,9 @@ docker compose up --build -d
 
 ## 一、前端
 
-### F1：Player 视频地址硬编码空串
+> **typecheck 状态：✅ 通过** — `vite-env.d.ts` 已补齐；Mindmap `onSeek` 已接入节点点击跳转。
+
+### F1：Player 视频地址硬编码空串 ✅ 已实现
 
 - **位置**：`frontend/src/pages/CourseDetail.tsx:30`
 - **现状**：`<Player src="" onTimeUpdate={setCurrentSec} />`，src 固定为空串
@@ -66,7 +83,7 @@ useEffect(() => { getCourse(courseId).then(setCourse).catch(() => {}); }, [cours
 
 - **前置**：`api/courses.ts` 需补充 `getCourse(id)` 单条查询封装
 
-### F2：点击跳转不工作（onSeek 未传入）
+### F2：点击跳转不工作（onSeek 未传入） ✅ 已实现
 
 - **位置**：`frontend/src/pages/CourseDetail.tsx:31-36`
 - **现状**：Subtitle/Keypoints/Mindmap 组件均接受 `onSeek` prop，但 CourseDetail 未传入
@@ -84,7 +101,7 @@ const seek = useContext(SeekContext);
 <MindmapView mindmap={mindmap} onSeek={seek} />
 ```
 
-### F3：SeekContext.Provider 渲染空子节点
+### F3：SeekContext.Provider 渲染空子节点 ✅ 已实现
 
 - **位置**：`frontend/src/components/Player/index.tsx:29`
 - **现状**：`<SeekContext.Provider value={seek}>{null}</SeekContext.Provider>`，子组件无法消费
@@ -102,7 +119,7 @@ interface PlayerProps {
 
 CourseDetail 改为将 Subtitle/Keypoints/Summary/Mindmap 作为 Player 的 children 或在 Player 外层用 SeekContext.Provider 包裹。
 
-### F4：开始解析无反馈
+### F4：开始解析无反馈 ✅ 已实现
 
 - **位置**：`frontend/src/pages/CourseList.tsx:20`
 - **现状**：`onClick={() => startParse(c.id)}`，调用后无 loading/toast/跳转
@@ -121,7 +138,7 @@ onClick={async () => {
 // 按钮文本: {loadingId === c.id ? '解析中...' : '开始解析'}
 ```
 
-### F5：CourseDetail 未展示解析进度
+### F5：CourseDetail 未展示解析进度 ✅ 已实现
 
 - **位置**：`frontend/src/pages/CourseDetail.tsx`
 - **现状**：已导入 `useTask` hook 但未使用，TaskStatus 组件未渲染
@@ -137,7 +154,7 @@ const task = useTask(taskId);
 
 - **前置**：`api/tasks.ts` 需补充 `getLatestTask(courseId)` 封装；后端 `api/v1/tasks.py` 需补充按 courseId 查最新 task 的端点
 
-### F6：未获取 course.video_url
+### F6：未获取 course.video_url ✅ 已实现
 
 - **位置**：`frontend/src/pages/CourseDetail.tsx`
 - **现状**：只获取了 transcripts/keypoints/summary/mindmap，未获取 course 本身
@@ -145,15 +162,15 @@ const task = useTask(taskId);
 
 ### 4.0 当前问题盘点
 
-| # | 问题 | 位置 | 严重度 |
-|---|---|---|---|
-| U0 | `App.tsx` 未用 `Layout` 包裹路由，无全局 header/nav | `App.tsx` | 高 |
-| U1 | `Course` 类型缺 `video_url`/`platform_course_id` 字段 | `types/index.ts:8-16` | 高 |
-| U2 | Tailwind config 无自定义主题（配色/间距/字体均默认） | `tailwind.config.js` | 中 |
-| U3 | 无加载/空状态/错误状态的统一组件 | 全局 | 中 |
-| U4 | 无 toast/通知系统，`alert()` 原始弹窗 | `AdminAuth.tsx:11`、`CourseList.tsx` | 中 |
-| U5 | 无响应式断点处理，小屏不可用 | 全局 | 低（MVP 桌面优先） |
-| U6 | 无暗色模式 | 全局 | 低（P1） |
+| # | 问题 | 位置 | 严重度 | 状态 |
+|---|---|---|---|---|
+| U0 | `App.tsx` 未用 `Layout` 包裹路由，无全局 header/nav | `App.tsx` | 高 | ✅ |
+| U1 | `Course` 类型缺 `video_url`/`platform_course_id` 字段 | `types/index.ts:8-16` | 高 | ✅ |
+| U2 | Tailwind config 无自定义主题（配色/间距/字体均默认） | `tailwind.config.js` | 中 | ✅ |
+| U3 | 无加载/空状态/错误状态的统一组件 | 全局 | 中 | ✅ |
+| U4 | 无 toast/通知系统，`alert()` 原始弹窗 | `AdminAuth.tsx:11`、`CourseList.tsx` | 中 | ✅ |
+| U5 | 无响应式断点处理，小屏不可用 | 全局 | 低（MVP 桌面优先） | ✅ |
+| U6 | 无暗色模式 | 全局 | 低（P1） | ❌ |
 
 ### 4.1 设计基础
 
@@ -752,7 +769,7 @@ const seek = useContext(SeekContext);
 
 ## 二、纯后端（5 项）
 
-### B1：CAS 验证码处理
+### B1：CAS 验证码处理 ✅ 已实现
 
 - **位置**：`backend/app/integrations/platform.py:56-58`
 - **现状**：manual 和 ocr 模式均为 `NotImplementedError`
@@ -771,7 +788,7 @@ ocr = ddddocr.DdddOcr()
 captcha_code = ocr.classification(image_bytes)
 ```
 
-### B2：fetch_course_meta 串联编排
+### B2：fetch_course_meta 串联编排 ✅ 已实现
 
 - **位置**：`backend/app/integrations/platform.py:141`
 - **现状**：`NotImplementedError`
@@ -795,7 +812,7 @@ async def fetch_course_meta(platform_course_id: str) -> dict:
     return {"cookies": cookies, "user_id": user_id, "course": target, "replays": result}
 ```
 
-### B3：视频下载
+### B3：视频下载 ✅ 已实现
 
 - **位置**：`backend/app/pipeline/steps/download.py:15`
 - **现状**：`NotImplementedError`
@@ -820,11 +837,11 @@ def download_video(stream_url: str, output_path: str) -> str:
 
 - **注意**：下载前检查磁盘可用空间；流地址可能有时效性，失败时需重新调 API 2 刷新
 
-### B4：音频提取 + 降噪
+### B4：音频提取 + 降噪 ✅ 已实现
 
 - **位置**：`backend/app/pipeline/steps/audio.py:13`
 - **现状**：`NotImplementedError`
-- **方案**：用 ffmpeg 提取 16kHz 单声道 PCM WAV（讯飞 ASR 要求）
+- **方案**：用 ffmpeg 提取 16kHz 单声道 PCM WAV（硅基流动 ASR 要求）
 
 ```python
 import ffmpeg
@@ -841,7 +858,7 @@ def extract_audio(video_path: str, audio_path: str) -> str:
     return audio_path
 ```
 
-### B5：平台导入去重
+### B5：平台导入去重 ✅ 已实现
 
 - **位置**：`backend/app/services/course_service.py`
 - **现状**：只有手动导入 `import_course`（source="manual"），缺平台拉取去重
@@ -876,16 +893,16 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 
 ## 三、AI 相关后端（4 项）
 
-> **本节修订说明**：原稿只有 A1（讯飞 ASR）、A2（硅基流动 LLM）两个函数级草图，缺少「现有代码契约、长文本分段、结果校验与规范化、平台字幕/知识点接入、失败降级与测试」等环节，且草图与当前代码签名不一致（`transcribe` 现为**同步**函数；LLM 客户端是**三个业务函数 + `_chat`**，并不存在 `generate_analysis`）。
+> **本节修订说明**：原稿只有 A1（讯飞 ASR）、A2（硅基流动 LLM）两个函数级草图，缺少「现有代码契约、长文本分段、结果校验与规范化、平台字幕/知识点接入、失败降级与测试」等环节，且草图与当前代码签名不一致（`transcribe` 现为**同步**函数；LLM 客户端是**三个业务函数 + `_chat`**，并不存在 `generate_analysis`）。**A1 已变更为统一调用硅基流动 ASR（`XingChenAGI/XingChenASR-V3.2-Ultra`），不再使用讯飞。**
 > 本节依据 `docs/00`（FR-03/04/05/06、P0-03~P0-06、NFR-02/03/04/05/10、AC-02/03/04/05/06）、`docs/03`（四张结果表）、`docs/04`（Step 4/5/6 与状态机）、`docs/05`（异常降级与防幻觉）、`docs/10`（平台 API 3 知识点 / API 6 字幕）以及当前后端代码骨架重新补全为 4 项。
 
-### A0：AI 步骤现有骨架与接口契约（动手前必读）
+### A0：AI 步骤现有骨架与接口契约（动手前必读） ✅ 已就绪
 
 **已就绪、不要重复实现**：
 
 | 环节 | 位置 | 现状 |
 | --- | --- | --- |
-| ASR 步骤 | `backend/app/pipeline/steps/asr.py:7-13` | `run_asr(audio_path, task_id)` 已由 `@with_retry(max_attempts=settings.xfyun_asr_max_retry, exceptions=(TimeoutError, RuntimeError), step_name="asr")` 包裹 |
+| ASR 步骤 | `backend/app/pipeline/steps/asr.py:7-13` | `run_asr(audio_path, task_id)` 已由 `@with_retry(max_attempts=settings.siliconflow_asr_max_retry, exceptions=(TimeoutError, RuntimeError), step_name="asr")` 包裹 |
 | LLM 步骤 | `backend/app/pipeline/steps/llm.py:12-22` | `run_llm(transcripts, course, task_id)` 已接重试（`siliconflow_max_retry`），依次调用三个 LLM 函数 |
 | 重试策略 | `backend/app/pipeline/retry.py:11-22` | tenacity 指数退避（2s 起、上限 30s、`reraise=True`） |
 | 结果持久化 | `backend/app/pipeline/steps/persist.py:11-59` | 事务写入 transcripts/keypoints/summaries/mindmaps，统一写 `ai_generated=True`、`source_model`、`generated_at`；keypoint 时间戳越界时跳过（`:33-34`） |
@@ -897,7 +914,7 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 
 | 环节 | 位置 | 现状 |
 | --- | --- | --- |
-| ASR 客户端 | `backend/app/integrations/xfyun_asr.py:10-18` | 同步 `transcribe(audio_path) -> list[dict]`，仅校验凭证（`:16-17`）后 `raise NotImplementedError`（`:18`） |
+| ASR 客户端 | `backend/app/integrations/xfyun_asr.py:10-18`（将改名 `siliconflow_asr.py`）| 同步 `transcribe(audio_path) -> list[dict]`，仅校验凭证（`:16-17`）后 `raise NotImplementedError`（`:18`） |
 | LLM 客户端 | `backend/app/integrations/siliconflow_llm.py:7-36` | `_SYSTEM_PROMPT`（`:7-10`，防幻觉）+ `_chat` 桩（`:13-18`）+ 三个业务函数（`:21-36`，prompt 已写好但返回空值） |
 | 平台字幕/知识点接入 | `backend/app/pipeline/steps/metadata.py:10-19` | 只回写 `title`/`duration_sec`，未取 VTT/zsd，也没有保存 `rpId` |
 | 校验/降级/测试 | `retry.py`、`orchestrator.py`、`backend/tests/test_pipeline/`（目前仅有 `__init__.py`） | 429、整任务超时、并发上限、AI 单测均未落地 |
@@ -912,51 +929,50 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 | 总结字段 | `overview` / `chapter_points` / `key_details` / `review_hints`（`persist.py:45-48`） |
 | 导图字段 | `root_topic` / `nodes`（`persist.py:54-55`），`nodes` 为两级结构 `[{module, knowledge_points:[{name, timestamp_sec}]}]` |
 | 枚举与范围约束 | `category ∈ {concept, formula, example, exam_point}`（`docs/03:121`）；`0 ≤ timestamp_sec ≤ duration_sec`（`docs/03:130`、AC-03-03）；`0 ≤ start_sec < end_sec ≤ duration_sec`（AC-06-02） |
-| 来源标识 | ASR：`source_model='xfyun-asr'`、`ai_generated=True`（`persist.py:28`）；LLM：`ai_generated=True`、`source_model=settings.siliconflow_model`（`persist.py:39/49/56`）；平台数据：`ai_generated=False`（`docs/03:131`、`docs/10:977`） |
+| 来源标识 | ASR：`source_model='siliconflow-asr'`、`ai_generated=True`（`persist.py:28`）；LLM：`ai_generated=True`、`source_model=settings.siliconflow_model`（`persist.py:39/49/56`）；平台数据：`ai_generated=False`（`docs/03:131`、`docs/10:977`） |
 | 任务状态 | `asr_running` / `llm_running` / `persisting`（`docs/03:76`、`docs/04:96-101`）由编排层写入，AI 客户端不要自行改任务状态 |
 
 **范围边界**：P1 的 AI 能力——术语库与术语校正（FR-15/P1-01，对应 AC-06-06 见 `docs/00:311`）、字幕与导图导出（FR-11/P1-02~03）、复习题生成（FR-12/P1-04）、课内关键词检索（FR-09/P1-05）——MVP 只预留目录、不编码（`docs/08:22-46`），本节不含其实现；需求中检索定义为**关键词检索**，不引入向量/embedding。
 
-### A1：讯飞 ASR API 调用
+### A1：硅基流动 ASR API 调用 ❌ 待实现
 
-- **位置**：`backend/app/integrations/xfyun_asr.py:10-18`
+- **位置**：`backend/app/integrations/xfyun_asr.py:10-18`（将改名为 `siliconflow_asr.py`）
 - **现状**：`transcribe()` 仅做凭证校验后 `raise NotImplementedError`；而 `asr.run_asr` 的重试、编排层的 `asr_running(50)` 状态、`persist.py` 的入库都已就绪，**实际只需把 `transcribe` 填实**
 - **目标**：输入 `storage/audios/{task_id}.wav`（16kHz 单声道，已由 `audio.extract_and_denoise` 降噪），输出句级时间戳转写 `[{text, start_sec, end_sec}]`，满足 FR-03、AC-02-01~05、AC-06-01~02
+- **方案变更**：原计划使用讯飞 ASR（HMAC 签名 + 长音频分片上传 + 轮询），现改为**统一调用硅基流动 API**，使用模型 `XingChenAGI/XingChenASR-V3.2-Ultra`，鉴权方式与 LLM 相同（Bearer Token），无需讯飞特有的签名/分片/轮询流程
 
 **实现步骤**：
 
-1. **参数与语言**：显式传入 `settings.xfyun_asr_lang`（`config.py:37`、`.env.example:44`）选择中文/英文模型，否则英文课程识别质量会下降。
-2. **鉴权签名**：按 `xfyun_asr.py:13` 的 TODO 用 HMAC + Base64 生成签名，请求携带 `appId` 与 `ts`/`signa`。
-3. **上传音频**：先校验文件存在、格式与大小在接口限制内；超过单文件上限时按静音边界**分片**上传（长音频接口要求）。
-4. **轮询结果**：用上传返回的任务 ID 轮询，间隔 5s；轮询总时长受 `settings.xfyun_asr_timeout`（`config.py:38`）与整任务 `TASK_TOTAL_TIMEOUT` 双重约束。**注意**：`settings.xfyun_asr_max_retry`（`config.py:39`）已被 `asr.py:7-11` 的重试装饰器占用，轮询次数不要再复用它，否则最坏耗时 = 轮询次数 × 重试次数 × 单次超时。
-5. **解析结果**：把返回的 lattice / `bestPath` 中词级 `bg`/`ed`（开始/结束）按标点与停顿聚合为**句级** `{text, start_sec, end_sec}`（秒，保留 2 位小数）。
-6. **结果校验**（AC-06-02、NFR-02）：句级时间戳单调不减、`start_sec < end_sec`、不超过课程 `duration_sec`；越界句截断到 `duration_sec` 并告警；相邻空洞 > 10s 记 warning 便于排查。
+1. **鉴权**：与 LLM 共用 `settings.siliconflow_api_key`，请求头 `Authorization: Bearer <SILICONFLOW_API_KEY>`，无需讯飞的 HMAC 签名 / appId / ts / signa。
+2. **上传音频**：将 16kHz 单声道 WAV 通过硅基流动 ASR 接口上传（`httpx` multipart 或 base64，视接口要求而定），携带 `model=XingChenAGI/XingChenASR-V3.2-Ultra`。
+3. **获取结果**：视硅基流动 ASR 接口设计——若为同步返回则直接解析；若为异步任务则轮询（间隔 5s，deadline 受 `settings.siliconflow_asr_timeout` 与 `TASK_TOTAL_TIMEOUT` 双重约束）。**注意**：`settings.siliconflow_asr_max_retry`（由原 `xfyun_asr_max_retry` 改名）已被 `asr.py:7-11` 的重试装饰器占用，轮询次数不要复用它。
+4. **解析结果**：将返回结果中的词级/句级时间戳聚合为**句级** `{text, start_sec, end_sec}`（秒，保留 2 位小数）。
+5. **结果校验**（AC-06-02、NFR-02）：句级时间戳单调不减、`start_sec < end_sec`、不超过课程 `duration_sec`；越界句截断到 `duration_sec` 并告警；相邻空洞 > 10s 记 warning 便于排查。
 
 **代码骨架**（保持现有同步签名）：
 
 ```python
 def transcribe(audio_path: str) -> list[dict]:
-    """讯飞 ASR：音频 → 句级时间戳转写 [{"text", "start_sec", "end_sec"}]。"""
-    # 1) 签名：ts + appId + secret（算法以控制台开通的接口为准）
-    # 2) 上传：files={"file": open(audio_path, "rb")}，带 fileName/fileSize/duration/language
-    # 3) 轮询：interval=5s，deadline 由 xfyun_asr_timeout / TASK_TOTAL_TIMEOUT 控制
-    # 4) 解析：lattice → bestPath → 词级 bg/ed → 聚合为句级
+    """硅基流动 ASR：音频 → 句级时间戳转写 [{"text", "start_sec", "end_sec"}]。"""
+    # 1) 鉴权：Bearer Token（与 LLM 共用 SILICONFLOW_API_KEY）
+    # 2) 上传：httpx post 到硅基流动 ASR 接口，model=XingChenAGI/XingChenASR-V3.2-Ultra
+    # 3) 获取结果：同步解析或异步轮询（interval=5s，deadline 由 siliconflow_asr_timeout / TASK_TOTAL_TIMEOUT 控制）
+    # 4) 解析：词级/句级时间戳 → 聚合为句级 {text, start_sec, end_sec}
     # 5) 校验：单调递增、0 ≤ start < end ≤ duration_sec、空洞告警
     return sentences
 ```
 
-**配置项**：`XFYUN_APP_ID` / `XFYUN_API_KEY` / `XFYUN_API_SECRET`、`XFYUN_ASR_LANG`、`XFYUN_ASR_TIMEOUT`、`XFYUN_ASR_MAX_RETRY`（`.env.example:39-48`、`docs/06:39-45`）。
+**配置项**：复用 `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL`，新增 `SILICONFLOW_ASR_MODEL`（默认 `XingChenAGI/XingChenASR-V3.2-Ultra`）、`SILICONFLOW_ASR_TIMEOUT`、`SILICONFLOW_ASR_MAX_RETRY`（由原 `XFYUN_*` 系列改名）。移除 `XFYUN_APP_ID` / `XFYUN_API_KEY` / `XFYUN_API_SECRET` / `XFYUN_ASR_LANG`（硅基流动 ASR 模型自带多语言能力，无需显式指定 lang）。
 
 **注意事项**：
 
-- 长音频转写（语音转写 / LFASR）与实时听写（IAT）是**两套接口，域名、路径、签名算法都不同**。原稿写的 `https://api.xfyun.cn/v1/audios` + `X-Appid/X-Signa` 请求头，与代码里 `lattice`/`bestPath` 的解析要求并不匹配，实现前必须以控制台实际开通的接口文档为准（若签名实为 `HmacSHA1(MD5(appId+ts), secretKey)`，就不是 SHA256）。
-- 长音频接口通常只用到 `APPID + API_SECRET`，`XFYUN_API_KEY` 可能不参与签名：配置保留以便将来切换接口，但不要假定三者都必需。
+- ASR 与 LLM 共用同一硅基流动 API Key 和 Base URL，仅模型不同（ASR = `XingChenAGI/XingChenASR-V3.2-Ultra`，LLM = `settings.siliconflow_model`）。
 - 降噪与重采样已在 Step 3 的 `audio.extract_and_denoise` 完成，ASR 侧不要重复处理音频。
 - 失败时必须抛出 `TimeoutError` 或 `RuntimeError`，否则不会被 `asr.py:9` 的 `exceptions=(TimeoutError, RuntimeError)` 捕获、也就不会触发重试。
-- **实现前需同步修正的两处细节**：`xfyun_asr.py:16` 目前只校验 `xfyun_app_id` / `xfyun_api_key`，未校验签名必需的 `xfyun_api_secret`；`:5` 的 `import httpx` 目前完全未使用，实现后才会用上。
+- **实现前需同步修正**：`xfyun_asr.py` 改名为 `siliconflow_asr.py`，凭证校验从 `xfyun_app_id` / `xfyun_api_key` 改为 `siliconflow_api_key`；`asr.py:3` 的 `from app.integrations import xfyun_asr` 改为 `siliconflow_asr`；`config.py` 的 `xfyun_*` 配置项改为 `siliconflow_asr_*`；`persist.py:28` 的 `source_model="xfyun-asr"` 改为 `source_model=settings.siliconflow_asr_model`。
 - **占位实现会被重试放大**：`NotImplementedError` 是 `RuntimeError` 的子类，会被 `asr.py:9` 的 `exceptions=(TimeoutError, RuntimeError)` 捕获，所以现在跑流水线会先白等一轮指数退避才失败；填实实现后不受影响。
 
-### A2：硅基流动 LLM API 调用
+### A2：硅基流动 LLM API 调用 ❌ 待实现
 
 - **位置**：`backend/app/integrations/siliconflow_llm.py:7-36`
 - **现状**：`_SYSTEM_PROMPT`（`:7-10`）与三个业务函数的 prompt（`:22`、`:28`、`:34`）都已写好，但 `_chat`（`:13-18`）是桩，三个函数调完 `_chat` 后**丢弃返回值**、恒返回 `[]` / `{}`；`llm.run_llm`（`llm.py:12-22`）的重试与编排状态已就绪
@@ -1037,7 +1053,7 @@ def _loads(content: str) -> dict:
 
 **配置与一致性注意**：`config.py:43` 的默认模型是 `deepseek-ai/DeepSeek-V3`，而 `.env.example:54` 与 `docs/06:52` 写的是 `Qwen/Qwen3-8B`（`docs/01:25` 又写"DeepSeek/Qwen"、`docs/03:125` 以 `deepseek-v3` 作为 `source_model` 示例）。由于 `persist.py:39/49/56` 会把 `settings.siliconflow_model` 直接写进 `source_model`，**这四处口径必须先统一**，否则同一批数据的来源标识会不一致。
 
-### A3：平台字幕（VTT）与知识点（zsd）接入
+### A3：平台字幕（VTT）与知识点（zsd）接入 ❌ 待实现
 
 - **位置**：`backend/app/integrations/platform.py:275-285`（`list_keypoints`，API 3）、`:287-294`（`get_subtitle_vtt`，API 6）——两者**已实现但全项目无调用方**；接入点在 `pipeline/steps/metadata.py`、Step 4 之前与 Step 5 之后
 - **依据**：`docs/10:947-948`（zsd 作为 LLM 重点的补充/校验来源，与 LLM 结果做时间点对齐校验，偏差 ≤ 2s；平台 VTT 可直接复用，作为 ASR 结果的补充/校验，无则走 ASR 生成）、`docs/10:977`（zsd 写入 keypoints：`timestamp_sec = zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`、`category` 按内容归类）、`docs/03:131`
@@ -1070,7 +1086,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 
 **注意**：`platform.py` 这两个函数是 `async def`，而流水线与 `transcribe` / `_chat` 都是同步的；调用方式参照 `metadata.py:15` 的 `asyncio.run(...)` 先例，不要在已有事件循环内嵌套调用。
 
-### A4：结果校验、失败降级与测试
+### A4：结果校验、失败降级与测试 ❌ 待实现
 
 - **位置**：`pipeline/retry.py`、`pipeline/orchestrator.py`、`pipeline/steps/persist.py`、`backend/tests/test_pipeline/`
 - **依据**：`docs/05:5-14`（外部 API 降级）、`docs/05:12`（429 按 `Retry-After`）、`docs/05:23-24`（整任务超时、并发上限）、`docs/05:49-52`（防幻觉与越界校验）、`docs/02:123`（流水线单测 mock 外部 API）、`docs/00:378-379`
@@ -1090,13 +1106,13 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 
 | 场景 | 现状 | 待补 |
 | --- | --- | --- |
-| ASR 超时/报错 | `asr.py:7-11` 指数退避重试 `XFYUN_ASR_MAX_RETRY` 次；仍失败由 `orchestrator.py:57-59` 标 failed | 错误码固定为 `ASR_TIMEOUT` / `ASR_ERROR`（现在取异常类名大写，会得到 `TIMEOUTERROR`，与 `docs/03:79`、`docs/04:63` 不一致） |
+| ASR 超时/报错 | `asr.py:7-11` 指数退避重试 `SILICONFLOW_ASR_MAX_RETRY` 次；仍失败由 `orchestrator.py:57-59` 标 failed | 错误码固定为 `ASR_TIMEOUT` / `ASR_ERROR`（现在取异常类名大写，会得到 `TIMEOUTERROR`，与 `docs/03:79`、`docs/04:63` 不一致） |
 | LLM 超时/报错 | `llm.py:12-16` 重试 `SILICONFLOW_MAX_RETRY` 次 | 错误码固定为 `LLM_TIMEOUT` / `LLM_ERROR`；**部分失败降级**：重点/总结/导图任一失败时，已成功的结果先落库、失败项留空并在 `error_message` 说明，任务整体仍标 `failed` 供重试，且"已生成的部分结果不回滚丢失"（`docs/05:10`）——注意 `persist.save_results` 当前要求四类结果齐全，需要支持 `None` / 空值 |
 | 429 限流 | 未处理：`retry.py:16` 只对 `(TimeoutError, RuntimeError)` 重试，`httpx.HTTPStatusError`（429）不会重试 | 增加 429 分支，按 `Retry-After` 头等待后重试（`docs/05:12`） |
 | 整任务超时 | 未落地：`config.py:58` 有 `task_total_timeout`，全项目无使用 | 在编排层对下载+ASR+LLM 累计耗时设上限，超时标 `TOTAL_TIMEOUT`（`docs/05:23`） |
 | 并发上限 | 未落地：`config.py:59` 有 `task_max_concurrent`，`parse_worker.py` 未使用 | 限制同时运行的任务数，超出排队（`docs/05:24`、`docs/10:1016`） |
 | 重试复用缓存 | 未落地：`task_service.py:26` 复制了 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载，从不读取该字段 | 按 `docs/04:115` 跳过 Step 1/2/3 从失败步骤续跑；否则一次 LLM 阶段失败会连带重复消耗 ASR 额度 |
-| 凭证缺失 | `xfyun_asr.py:16-17`、`siliconflow_llm.py:14-15` 已抛 `RuntimeError` | 建议在建任务前前置校验，给出可读提示，而不是等到 ASR 步骤才失败 |
+| 凭证缺失 | `xfyun_asr.py:16-17`（将改名 `siliconflow_asr.py`）、`siliconflow_llm.py:14-15` 已抛 `RuntimeError` | 建议在建任务前前置校验，给出可读提示，而不是等到 ASR 步骤才失败 |
 
 **A4-3 可观测性与成本**
 
@@ -1110,7 +1126,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 | 测试 | 断言 |
 | --- | --- |
 | ASR 结果解析 | lattice 样例 → 句级时间戳正确、单调递增、范围合法 |
-| ASR 超时重试 | 连续失败按 `XFYUN_ASR_MAX_RETRY` 重试后抛错，落库错误码为 `ASR_TIMEOUT` |
+| ASR 超时重试 | 连续失败按 `SILICONFLOW_ASR_MAX_RETRY` 重试后抛错，落库错误码为 `ASR_TIMEOUT` |
 | LLM JSON 容错 | ```json 围栏 / 带解释文字 / 截断 三种输入下的解析与重试 |
 | 结果规范化 | 非法 `category` → `concept`；越界 `timestamp_sec` → 对齐或丢弃；`source_transcript_ids` 由本地生成 |
 | 部分失败降级 | 导图失败时重点与总结仍落库、任务标 failed、部分结果不丢 |
@@ -1129,7 +1145,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 | 时间点必须落在有效时长内 | — | AC-03-03、AC-06-02 |
 | 全部 AI 内容带生成标识 | 100% | `docs/00:377`、`docs/05:50` |
 
-### A5：实现前需统一的不一致项（本次检验结论）
+### A5：实现前需统一的不一致项（本次检验结论） ❌ 待统一
 
 | 不一致项 | 事实 | 处理建议 |
 | --- | --- | --- |
@@ -1137,7 +1153,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 | 错误码 | `orchestrator.py:59` 用 `type(exc).__name__.upper()`；`docs/03:79`、`docs/04:43/53/63/78/87` 要求 `ASR_TIMEOUT`、`ASR_ERROR`、`LLM_TIMEOUT`、`LLM_ERROR`、`PERSIST_FAIL` 等固定码 | 在步骤层抛带 `error_code` 的异常，或维护异常类型 → 错误码映射表 |
 | 重试续跑 | `task_service.py:26` 复制 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载；`audio_cache_path` 未复制 | 与 `docs/04:115` 对齐，实现"跳过已完成的 Step 1/2/3" |
 | 平台元数据映射 | `metadata.py:16-17` 的键名与 `platform.py:267-272` 返回结构不匹配；`course.video_url` 未被写入 | 先修映射，否则 AI 链路在平台课程上不可达（前置阻塞） |
-| 已定义未使用的 AI 配置 | `config.py` 的 `xfyun_api_secret:36`、`xfyun_asr_lang:37`、`xfyun_asr_timeout:38`、`siliconflow_timeout:44`、`timestamp_tolerance_sec:60`，以及 `task_total_timeout:58`、`task_max_concurrent:59` | 在 A1/A2/A3/A4 中逐一接线，避免"配置写了但行为没变" |
+| 已定义未使用的 AI 配置 | `config.py` 的 `siliconflow_asr_model`、`siliconflow_asr_timeout`、`siliconflow_timeout:44`、`timestamp_tolerance_sec:60`，以及 `task_total_timeout:58`、`task_max_concurrent:59`（原 `xfyun_*` 系列将改名移除）| 在 A1/A2/A3/A4 中逐一接线，避免"配置写了但行为没变" |
 | 已定义未使用的常量 | `KEYPOINT_CATEGORIES`（`keypoint.py:9`）、`TASK_STATUSES`（`task.py:9-13`）除定义处外无引用，也未落成 DB CHECK | 在 A2-5 规范化与状态更新校验中使用 |
 | 平台知识点的 `source_transcript_ids` 恒为空 | `persist.py:40` 写入 `k.get("source_transcript_ids", [])`，而 LLM 结果恒为 `[]` | A2-5 的本地溯源生成落地后自然修复 |
 
@@ -1146,13 +1162,13 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 ## 实现优先级
 
 ```
-B1 CAS验证码 → B2 串联编排 → B3 视频下载 → B4 音频提取
+B1 ✅ CAS验证码 → B2 ✅ 串联编排 → B3 ✅ 视频下载 → B4 ✅ 音频提取
                                                 ↓
-A1 讯飞ASR → A2 硅基LLM → A4 校验/降级/测试 → B5 去重 → F1-F6 前端联调 → U0-U6 样式完善
+A1 硅基ASR → A2 硅基LLM → A4 校验/降级/测试 → B5 ✅ 去重 → F1-F6 ✅ 前端联调 → U0-U5 ✅ 样式完善 → U6 暗色模式(P1)
      ↑
 A3 平台字幕/知识点接入（与 A1/A2 并行；需先修平台元数据映射）
 ```
 
-先打通后端数据链路（B1→B4→A1→A2），再做前端联调（F1-F6），最后补去重（B5）和样式完善（U0-U6）。
+后端数据链路（B1→B4→B5）与前端联调（F1-F6、U0-U5）均已全部打通，当前阻塞点仅在 **A1/A2（AI 调用）**。
 
-AI 侧建议顺序：**A1**（先让 ASR 产出真实转写）→ **A2**（LLM 产出结构化结果，含 A2-1 时间戳注入）→ **A4** 的校验与部分失败降级（保证 AC-02-06 不被违反）→ **A3** 平台字幕/知识点接入（可与 A1 并行开发，但要等元数据映射修好、拿到真实 `rpId` 才能联调）；**A5** 的不一致项在动手前先统一。
+AI 侧建议顺序：**A5** 不一致项先统一 → **A1**（先让 ASR 产出真实转写）→ **A2**（LLM 产出结构化结果，含 A2-1 时间戳注入）→ **A4** 的校验与部分失败降级（保证 AC-02-06 不被违反）→ **A3** 平台字幕/知识点接入（可与 A1 并行开发，但要等元数据映射修好、拿到真实 `rpId` 才能联调）。

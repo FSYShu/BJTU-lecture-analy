@@ -4,7 +4,7 @@
 > 入口: `mis.bjtu.edu.cn`  
 > 课程平台: `123.121.147.7:88` (独立服务器)  
 > 视频服务器: `lmt5.bjtu.edu.cn:8880` (Wowza 流媒体服务器)  
-> 技术栈对齐: 本项目 FastAPI + BackgroundTasks + SQLite + httpx + ffmpeg-python + 讯飞 ASR + 硅基流动 LLM + React + Video.js + markmap（第 10 节已按本项目栈重写，第 11 节给出集成映射）
+> 技术栈对齐: 本项目 FastAPI + BackgroundTasks + SQLite + httpx + ffmpeg-python + 硅基流动 ASR/LLM + React + Video.js + markmap（第 10 节已按本项目栈重写，第 11 节给出集成映射）
 
 ---
 
@@ -861,12 +861,12 @@ def download_hls_stream(hls_url: str, out_path: Path) -> Path:
     return out_path
 ```
 
-**音频提取 — 对接 `app/pipeline/steps/audio.py`（ffmpeg 抽人声 + 降噪，送讯飞 ASR）**:
+**音频提取 — 对接 `app/pipeline/steps/audio.py`（ffmpeg 抽人声 + 降噪，送硅基流动 ASR）**:
 ```python
 import ffmpeg
 
 def extract_and_denoise(video_path: str, out_path: str) -> str:
-    """从教师流 mp4 抽取 16kHz 单声道 wav 并基础降噪，供讯飞 ASR。"""
+    """从教师流 mp4 抽取 16kHz 单声道 wav 并基础降噪，供硅基流动 ASR。"""
     (
         ffmpeg.input(video_path)
         .output(out_path, ar=16000, ac=1, af="highpass=f=80,afftdn=nr=12")
@@ -904,7 +904,7 @@ pipeline/steps/download.py → ffmpeg-python 下载教师流（MVP 优先，音�
     ↓
 pipeline/steps/audio.py → 抽 16kHz 单声道 wav + 降噪
     ↓
-pipeline/steps/asr.py → 讯飞 ASR 句级时间戳转写
+pipeline/steps/asr.py → 硅基流动 ASR 句级时间戳转写
     ↓
 pipeline/steps/llm.py → 硅基流动大模型（重点/分层总结/两级导图）
     ↓
@@ -935,7 +935,7 @@ pipeline/steps/persist.py → 写入 transcripts/keypoints/summaries/mindmaps
 
 ## 11. 与本项目（交大课录智析）集成映射
 
-> 本节把上述平台探索结果落地到本项目已搭建的技术栈与模块。本项目技术栈：FastAPI + BackgroundTasks + SQLite + SQLAlchemy + httpx + ffmpeg-python + 讯飞 ASR + 硅基流动 LLM；前端 React + Video.js + markmap。无 Redis、无 RabbitMQ、无 GPU。
+> 本节把上述平台探索结果落地到本项目已搭建的技术栈与模块。本项目技术栈：FastAPI + BackgroundTasks + SQLite + SQLAlchemy + httpx + ffmpeg-python + 硅基流动 ASR/LLM；前端 React + Video.js + markmap。无 Redis、无 RabbitMQ、无 GPU。
 
 ### 11.1 平台 API → 本项目模块映射
 
@@ -945,7 +945,7 @@ pipeline/steps/persist.py → 写入 transcripts/keypoints/summaries/mindmaps
 | API 1 课程录像列表 | `app/integrations/platform.py::list_replay_courses` | 拉取后写入 `courses` 表，`platform_course_id = cId` 用于重复导入识别（FR-01），`video_format='hls'` |
 | API 2 视频流地址 | `app/integrations/platform.py::fetch_stream_map` + `app/pipeline/steps/metadata.py` | 取 `streamMap`，存 `teaStreamHlsUrl` 到 `courses.video_url` |
 | API 3 知识点列表 | `app/integrations/platform.py`（新增）| 平台已有章节标记 `zsd`，可作为 `keypoints` 的补充/校验来源（与 LLM 抽取的重点做时间点对齐校验，偏差 ≤ 2 秒）|
-| API 6 字幕文件 (VTT) | `app/integrations/platform.py`（新增）| 平台已有 VTT 字幕时可直接用，作为讯飞 ASR 结果的补充/校验；无则走 ASR 生成 |
+| API 6 字幕文件 (VTT) | `app/integrations/platform.py`（新增）| 平台已有 VTT 字幕时可直接用，作为硅基流动 ASR 结果的补充/校验；无则走 ASR 生成 |
 | 视频下载 | `app/pipeline/steps/download.py` + `ffmpeg-python` | 见 11.2 三路流策略 |
 | 心跳 API 7 | 不对接 | 直接下载不触发观看时长监控，无需心跳 |
 

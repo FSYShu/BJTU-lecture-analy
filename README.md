@@ -12,7 +12,7 @@
 | --- | --- |
 | 前端 | React + TypeScript + Vite + Tailwind CSS + Video.js + markmap |
 | 后端 | Python + FastAPI + BackgroundTasks（无重型消息队列）|
-| AI 能力 | 讯飞 ASR API（语音转写）+ 硅基流动大模型 API（DeepSeek / Qwen，语义解析）|
+| AI 能力 | 硅基流动 API（ASR: XingChenASR-V3.2-Ultra + LLM: DeepSeek / Qwen）|
 | 存储 | SQLite（业务库）+ 本地磁盘（视频/音频缓存，可选阿里云 OSS）|
 | 依赖锁定 | 后端 `uv` + `pyproject.toml`；前端 `package-lock.json` |
 
@@ -39,7 +39,7 @@ BJTU-lecture-analy/
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入讯飞 / 硅基流动api
+# 编辑 .env，填入硅基流动 API 凭证
 ```
 
 ### 2. 后端（Python + uv）
@@ -89,8 +89,7 @@ docker compose -f docker-compose.dev.yml up --build
 
 完整清单见 [`.env.example`](.env.example) 与 [`docs/06-env-vars.md`](docs/06-env-vars.md)。关键项：
 
-- `XFYUN_*`：讯飞 ASR 凭证
-- `SILICONFLOW_*`：硅基流动大模型凭证与模型选择
+- `SILICONFLOW_*`：硅基流动 API 凭证与模型选择（ASR + LLM 共用）
 - `PLATFORM_*`：北京交通大学课程平台对接（CAS 登录 + API 1/2/3/6，含 `PLATFORM_CAS_LOGIN_URL`/`PLATFORM_VIDEO_SERVER` 等；CAS 用户名/密码由前端登录页输入）
 - `SECRET_KEY` / `JWT_*`：鉴权
 - `CACHE_RETENTION_DAYS` / `CLEANUP_AUDIO_AFTER_TASK`：缓存自动清理

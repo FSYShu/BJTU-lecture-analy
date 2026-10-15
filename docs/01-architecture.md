@@ -22,9 +22,10 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        引擎层 (Engine Layer)                         │
 │   ┌─────────────────┐    ┌──────────────────────────────────────┐   │
-│   │ 讯飞 ASR API    │ →  │ 硅基流动大模型 API (DeepSeek/Qwen)   │   │
-│   │ 语音→带时间戳   │    │ 重点抽取 / 分层总结 / 两级思维导图   │   │
-│   │ 转写文本        │    │ 仅基于本节转写，记录来源时间戳        │   │
+│   │ 硅基流动 ASR API.  │ →  │ 硅基流动大模型 API (DeepSeek/Qwen)   │   │
+│   │ XingChenASR-V3.2  │    │ 重点抽取 / 分层总结 / 两级思维导图   │   │
+│   │ 语音→带时间戳   │    │ 仅基于本节转写，记录来源时间戳        │   │
+│   │ 转写文本        │    │                                      │   │
 │   └─────────────────┘    └──────────────────────────────────────┘   │
 │   全部调用外部云 API，无 GPU、无本地模型                              │
 └──────────────────────────┬──────────────────────────────────────────┘
@@ -50,8 +51,8 @@
 ┌──────────────────┐    ┌──────────────────────────────┐    ┌──────────────────┐
 │  外部 AI API     │◄──│   应用服务层 (FastAPI)        │──►│   数据存储层     │
 │                  │   │                              │    │                  │
-│ 讯飞 ASR         │   │  api/    REST 路由+鉴权      │    │ SQLite 业务库    │
-│  (语音转写)      │   │  services/ 业务编排          │    │  users/courses/  │
+│ 硅基流动 ASR     │   │  api/    REST 路由+鉴权      │    │ SQLite 业务库    │
+│  (XingChenASR)   │   │  services/ 业务编排          │    │  users/courses/  │
 │                  │   │  pipeline/ 解析流水线        │    │  tasks/...       │
 │ 硅基流动 LLM     │   │  workers/ BackgroundTasks    │    │                  │
 │  (DeepSeek/Qwen) │   │  integrations/ API 客户端    │    │ 本地磁盘         │
@@ -75,7 +76,7 @@
 - **资源清理**：`core/cleanup.py` 按 `CACHE_RETENTION_DAYS` 清理过期缓存；任务完成且 `CLEANUP_AUDIO_AFTER_TASK=true` 时立即删除中间音频。
 
 ### 引擎层
-- **讯飞 ASR（`integrations/xfyun_asr.py`）**：输入人声音频，输出带句级时间戳的转写文本。失败按 `XFYUN_ASR_MAX_RETRY` 重试，超时降级。平台已有 VTT 字幕（API 6）可作为补充/校验来源。
+- **硅基流动 ASR（`integrations/siliconflow_asr.py`，由 `xfyun_asr.py` 改名）**：输入人声音频，调用硅基流动 ASR 模型 `XingChenAGI/XingChenASR-V3.2-Ultra`，输出带句级时间戳的转写文本。鉴权与 LLM 共用 Bearer Token。失败按 `SILICONFLOW_ASR_MAX_RETRY` 重试，超时降级。平台已有 VTT 字幕（API 6）可作为补充/校验来源。
 - **硅基流动大模型（`integrations/siliconflow_llm.py`）**：输入转写文本分段，输出重点时间点、分层课程总结、两级思维导图。**仅基于本节转写生成**，每条结果记录来源时间戳，避免幻觉。平台已有知识点（API 3 `zsd`）可作为重点时间点的补充/校验，与 LLM 结果做时间点对齐校验（偏差 ≤ 2 秒）。
 - **无 GPU**：全部为 HTTPS API 调用，普通云服务器可运行。
 

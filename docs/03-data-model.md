@@ -101,7 +101,7 @@ users ──< course_authorizations >── courses ──< parse_tasks ──< 
 | start_sec | REAL | NOT NULL | 句起始时间（秒，浮点）|
 | end_sec | REAL | NOT NULL | 句结束时间（秒）|
 | ai_generated | BOOLEAN | DEFAULT 1 | AI 生成标识 |
-| source_model | TEXT | | 来源模型（如 `xfyun-asr`）|
+| source_model | TEXT | | 来源模型（如 `siliconflow-asr`）|
 | generated_at | DATETIME | DEFAULT now | AI 生成时间戳 |
 | (P1) revised_text | TEXT | | 人工校正文本（P1-01，MVP 留空）|
 | (P1) revised_by | INTEGER | FK→users.id | 校正人（P1）|

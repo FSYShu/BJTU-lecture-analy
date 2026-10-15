@@ -36,13 +36,13 @@
 | `CACHE_RETENTION_DAYS` | 7 | 缓存保留天数 |
 | `CLEANUP_AUDIO_AFTER_TASK` | true | 任务成功后是否立即删音频 |
 
-### 讯飞 ASR
+### 硅基流动 ASR（XingChenASR）
+> 与 LLM 共用 `SILICONFLOW_API_KEY` / `SILICONFLOW_BASE_URL`，仅模型不同。
 | 变量 | 说明 |
 | --- | --- |
-| `XFYUN_APP_ID` / `XFYUN_API_KEY` / `XFYUN_API_SECRET` | 讯飞控制台凭证 |
-| `XFYUN_ASR_LANG` | zh-CN（默认）/ en-US |
-| `XFYUN_ASR_TIMEOUT` | 单次请求超时（秒）|
-| `XFYUN_ASR_MAX_RETRY` | 失败重试次数 |
+| `SILICONFLOW_ASR_MODEL` | `XingChenAGI/XingChenASR-V3.2-Ultra`（默认）|
+| `SILICONFLOW_ASR_TIMEOUT` | 单次请求超时（秒）|
+| `SILICONFLOW_ASR_MAX_RETRY` | 失败重试次数 |
 
 ### 硅基流动大模型
 | 变量 | 说明 |

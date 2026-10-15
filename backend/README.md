@@ -31,7 +31,7 @@ uv run mypy app
 
 - `app/main.py`：FastAPI 入口
 - `app/pipeline/`：解析流水线（下载→音频→ASR→大模型→持久化）
-- `app/integrations/`：讯飞 ASR / 硅基流动 LLM / 课程平台对接
+- `app/integrations/`：硅基流动 ASR/LLM / 课程平台对接
 - `app/api/v1/`：REST 路由
 - `app/db/models/`：ORM 模型（见 docs/03-data-model.md）
 
