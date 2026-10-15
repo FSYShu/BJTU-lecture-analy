@@ -46,6 +46,9 @@ storage/db/*.db-shm
 *.sqlite
 *.sqlite3
 
+# ===== 后端运行时数据（config 默认 storage_root 相对 backend 目录）=====
+backend/storage/
+
 # ===== 下载的视频缓存 / 提取的音频缓存 =====
 storage/videos/*
 !storage/videos/.gitkeep
