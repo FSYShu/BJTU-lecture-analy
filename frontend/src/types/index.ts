@@ -11,7 +11,9 @@ export interface Course {
   teacher_name?: string;
   session_label?: string;
   duration_sec?: number;
+  video_url?: string;
   video_format?: string;
+  platform_course_id?: string;
   source: string;
 }
 

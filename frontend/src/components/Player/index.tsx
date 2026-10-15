@@ -1,35 +1,55 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useEffect, useRef } from 'react';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
+
+// 播放器跳转能力上下文。由 CourseDetail 提供 seek 函数，供字幕/重点/导图消费。
+export const SeekContext = createContext<(t: number) => void>(() => {});
 
 interface PlayerProps {
   src: string;
   onTimeUpdate?: (t: number) => void;
+  onSeekReady?: (seek: (t: number) => void) => void;
 }
 
-export default function Player({ src, onTimeUpdate }: PlayerProps) {
+export default function Player({ src, onTimeUpdate, onSeekReady }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<any>(null);
-  const [ready, setReady] = useState(false);
+
+  const seek = useCallback((t: number) => {
+    playerRef.current?.currentTime(t);
+  }, []);
 
   useEffect(() => {
-    if (!videoRef.current) return;
-    playerRef.current = videojs(videoRef.current, { controls: true, fluid: true, sources: [{ src }] });
+    if (!videoRef.current || !src) return;
+    playerRef.current = videojs(videoRef.current, {
+      controls: true,
+      fluid: true,
+      sources: [{ src }],
+    });
     playerRef.current.on('timeupdate', () => onTimeUpdate?.(playerRef.current.currentTime()));
-    setReady(true);
-    return () => playerRef.current?.dispose();
+    return () => {
+      playerRef.current?.dispose();
+      playerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  // 暴露跳转能力
-  const seek = (t: number) => playerRef.current?.currentTime(t);
+  // 把 seek 函数上报给父组件（父组件再通过 SeekContext 下发）
+  useEffect(() => {
+    onSeekReady?.(seek);
+  }, [seek, onSeekReady]);
+
+  if (!src) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400 bg-black">
+        暂无视频
+      </div>
+    );
+  }
 
   return (
     <div data-vjs-player>
       <video ref={videoRef} className="video-js" />
-      {ready && <SeekContext.Provider value={seek}>{null}</SeekContext.Provider>}
     </div>
   );
 }
-
-import { createContext } from 'react';
-export const SeekContext = createContext<(t: number) => void>(() => {});
