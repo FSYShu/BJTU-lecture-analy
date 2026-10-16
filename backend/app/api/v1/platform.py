@@ -22,6 +22,7 @@ from app.schemas.platform import (
     CaptchaSubmitIn,
     CaptchaSubmitOut,
     ReplayOut,
+    ReplayStreamOut,
     SyncCoursesOut,
 )
 from app.schemas.task import TaskOut
@@ -168,18 +169,17 @@ async def get_course_replays(
         for r in replays
     ]
 
-@router.post("/courses/{course_id}/replays/{replay_id}/parse", response_model=TaskOut, status_code=201)
-async def parse_replay(
+@router.post("/courses/{course_id}/replays/{replay_id}/stream", response_model=ReplayStreamOut)
+async def get_replay_stream(
     course_id: int,
     replay_id: int,
-    bg: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
-    """获取指定课次的视频流 URL 并开始解析。
+) -> ReplayStreamOut:
+    """获取指定课次的视频流 URL，供播放器即时播放，不启动解析。
 
-    前端点击回放列表中某一项时调用：先通过 API 2 获取教师路 HLS 地址，
-    写入 course.video_url，再创建解析任务。
+    前端点击回放列表某一项时调用：通过 API 2 获取教师路 HLS 地址，
+    写入 course.video_url 并返回，播放器据此加载视频。
     """
     from app.core.exceptions import AppError
 
@@ -192,10 +192,7 @@ async def parse_replay(
 
     cookies = _normalize_cookies(json.loads(user.platform_cookies))
 
-    if not user.ve_user_id:
-        logger.info(f"ve_user_id 缺失，尝试 UI 模式获取 streamMap")
-
-    logger.info(f"parse_replay: course_id={course_id}, replay_id={replay_id}, ve_user_id={user.ve_user_id}, platform_c_id={course.platform_c_id}")
+    logger.info(f"get_replay_stream: course_id={course_id}, replay_id={replay_id}, ve_user_id={user.ve_user_id}, platform_c_id={course.platform_c_id}")
     stream_map, extracted_uid = await platform.get_stream_map_via_browser(
         cookies, replay_id, user.ve_user_id, course.platform_c_id
     )
@@ -203,14 +200,61 @@ async def parse_replay(
     if not video_url:
         raise AppError(code="NO_VIDEO_STREAM", message="未能获取视频流地址", status_code=400)
 
-    logger.info(f"parse_replay: video_url={video_url[:80]}...")
     course.video_url = video_url
-
     if extracted_uid and not user.ve_user_id:
         user.ve_user_id = extracted_uid
-        logger.info(f"parse_replay: 保存提取到的 ve_user_id={extracted_uid}")
-
+        logger.info(f"get_replay_stream: 保存提取到的 ve_user_id={extracted_uid}")
     db.commit()
+
+    logger.info(f"get_replay_stream: video_url={video_url[:80]}...")
+    return ReplayStreamOut(video_url=video_url)
+
+
+@router.post("/courses/{course_id}/replays/{replay_id}/parse", response_model=TaskOut, status_code=201)
+async def parse_replay(
+    course_id: int,
+    replay_id: int,
+    bg: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """获取指定课次的视频流 URL 并开始解析。
+
+    若 course.video_url 已存在（用户先点击回放项调用了 /stream），
+    直接复用，跳过浏览器调用以节省时间。
+    """
+    from app.core.exceptions import AppError
+
+    course = db.get(Course, course_id)
+    if not course:
+        raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
+
+    if not user.platform_cookies:
+        raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
+
+    if course.video_url:
+        logger.info(f"parse_replay: video_url 已存在，跳过浏览器调用：{course.video_url[:80]}...")
+    else:
+        cookies = _normalize_cookies(json.loads(user.platform_cookies))
+
+        if not user.ve_user_id:
+            logger.info(f"ve_user_id 缺失，尝试 UI 模式获取 streamMap")
+
+        logger.info(f"parse_replay: course_id={course_id}, replay_id={replay_id}, ve_user_id={user.ve_user_id}, platform_c_id={course.platform_c_id}")
+        stream_map, extracted_uid = await platform.get_stream_map_via_browser(
+            cookies, replay_id, user.ve_user_id, course.platform_c_id
+        )
+        video_url = stream_map.get("teaStreamHlsUrl") or stream_map.get("stuStreamHlsUrl") or ""
+        if not video_url:
+            raise AppError(code="NO_VIDEO_STREAM", message="未能获取视频流地址", status_code=400)
+
+        logger.info(f"parse_replay: video_url={video_url[:80]}...")
+        course.video_url = video_url
+
+        if extracted_uid and not user.ve_user_id:
+            user.ve_user_id = extracted_uid
+            logger.info(f"parse_replay: 保存提取到的 ve_user_id={extracted_uid}")
+        db.commit()
 
     task_service.ensure_parse_ready(course)
     task = task_service.create_task(db, course_id, user.id)

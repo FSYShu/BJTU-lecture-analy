@@ -65,7 +65,8 @@ def _chat(user_prompt: str) -> str:
     }
 
     started = time.monotonic()
-    with httpx.Client(timeout=settings.siliconflow_timeout) as client:
+    timeout = httpx.Timeout(settings.siliconflow_timeout, connect=10.0, write=30.0, pool=10.0)
+    with httpx.Client(timeout=timeout) as client:
         resp = client.post(url, headers=headers, json=payload)
         if resp.status_code in (400, 422):
             logger.warning("[llm] 接口不接受 response_format=json_object（HTTP {}），退回纯文本模式",

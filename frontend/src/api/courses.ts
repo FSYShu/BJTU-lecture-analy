@@ -9,6 +9,8 @@ export const startParse = (courseId: number) =>
   client.post(`/courses/${courseId}/parse`).then((r) => r.data);
 export const parseReplay = (courseId: number, replayId: number) =>
   client.post(`/platform/courses/${courseId}/replays/${replayId}/parse`).then((r) => r.data);
+export const fetchReplayStream = (courseId: number, replayId: number) =>
+  client.post<{ video_url: string }>(`/platform/courses/${courseId}/replays/${replayId}/stream`).then((r) => r.data);
 export const syncCourses = () =>
   client.post<{ synced: number; total: number }>('/platform/sync-courses').then((r) => r.data);
 export const fetchReplays = (courseId: number) =>

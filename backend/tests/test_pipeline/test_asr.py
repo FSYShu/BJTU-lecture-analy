@@ -77,9 +77,10 @@ def test_from_text_raises_when_estimation_disabled(monkeypatch):
         siliconflow_asr._from_text("句子。", 0.0, 5.0, estimated=True)
 
 
-def test_payload_without_text_or_segments_raises():
-    with pytest.raises(RuntimeError):
-        siliconflow_asr._sentences_from_payload({}, offset=0.0, chunk_end=1.0)
+def test_payload_without_text_or_segments_returns_empty():
+    """空分片（静音段）应跳过而非报错（docs/05 风险处理）。"""
+    result = siliconflow_asr._sentences_from_payload({}, offset=0.0, chunk_end=1.0)
+    assert result == []
 
 
 def test_validate_is_monotonic_and_drops_blank():
@@ -87,12 +88,13 @@ def test_validate_is_monotonic_and_drops_blank():
         {"text": "A", "start_sec": 5.0, "end_sec": 7.0},
         {"text": "B", "start_sec": 6.0, "end_sec": 6.2},  # 时间回退且 end<=start
         {"text": "   ", "start_sec": 9.0, "end_sec": 10.0},
-        {"text": "C", "start_sec": -3.0, "end_sec": -1.0},  # 负数起点
+        {"text": "C", "start_sec": -3.0, "end_sec": -1.0},  # 负数起点，先归零再顺延
     ])
     assert [item["text"] for item in cleaned] == ["A", "B", "C"]
     assert cleaned[1]["start_sec"] >= cleaned[0]["end_sec"]
     assert cleaned[1]["end_sec"] > cleaned[1]["start_sec"]
-    assert cleaned[2]["start_sec"] == 0.0
+    # 负数起点先归零 (0.0)，再因单调性顺延到前一句 end_sec
+    assert cleaned[2]["start_sec"] >= cleaned[1]["end_sec"]
 
 
 # --------------------------------------------------------------------------- #

@@ -5,21 +5,14 @@ import Subtitle from '@/components/Subtitle';
 import Keypoints from '@/components/Keypoints';
 import SummaryView from '@/components/Summary';
 import MindmapView from '@/components/Mindmap';
-import { getCourse, fetchReplays, parseReplay } from '@/api/courses';
+import ProgressStepper from '@/components/ProgressStepper';
+import { getCourse, fetchReplays, parseReplay, fetchReplayStream } from '@/api/courses';
 import { listTranscripts, listKeypoints, getSummary, getMindmap, getTask, getLatestTask } from '@/api';
 import { toast } from '@/store/toast';
 import type { Course, Replay, Transcript, Keypoint, Summary, Mindmap, Task } from '@/types';
 
 const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'extracting_audio', 'asr_running', 'llm_running', 'persisting']);
 
-const STEP_LABELS: Record<string, string> = {
-  queued: '排队中',
-  downloading: '下载音频',
-  extracting_audio: '提取音频',
-  asr_running: '语音识别',
-  llm_running: 'AI 解析',
-  persisting: '保存结果',
-};
 
 export default function CourseDetail() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +26,9 @@ export default function CourseDetail() {
 
   const [seek, setSeek] = useState<(t: number) => void>(() => {});
   const [replays, setReplays] = useState<Replay[]>([]);
+  const [selectedReplayId, setSelectedReplayId] = useState<number | null>(null);
+  const [replayVideoUrl, setReplayVideoUrl] = useState<string>('');
+  const [loadingStream, setLoadingStream] = useState<number | null>(null);
   const [parsingId, setParsingId] = useState<number | null>(null);
   const [task, setTask] = useState<Task | null>(null);
   const [taskStartTime, setTaskStartTime] = useState<number | null>(null);
@@ -46,6 +42,11 @@ export default function CourseDetail() {
     listKeypoints(courseId).then(setKeypoints).catch(() => {});
     getSummary(courseId).then(setSummary).catch(() => {});
     getMindmap(courseId).then(setMindmap).catch(() => {});
+  }, [courseId]);
+
+  const refreshBasic = useCallback(() => {
+    getCourse(courseId).then(setCourse).catch(() => {});
+    listTranscripts(courseId).then(setTranscripts).catch(() => {});
   }, [courseId]);
 
   const startPolling = useCallback((taskId: number) => {
@@ -70,7 +71,7 @@ export default function CourseDetail() {
           setTaskStartTime(null);
           toast.error(t.error_message || '解析失败');
         } else {
-          refreshAll();
+          refreshBasic();
         }
       } catch {
         if (pollRef.current) clearInterval(pollRef.current);
@@ -89,7 +90,8 @@ export default function CourseDetail() {
   }, [taskStartTime]);
 
   useEffect(() => {
-    refreshAll();
+    refreshBasic();
+    listKeypoints(courseId).then(setKeypoints).catch(() => {});
     fetchReplays(courseId)
       .then((list) => setReplays(list))
       .catch(() => {});
@@ -100,6 +102,8 @@ export default function CourseDetail() {
           setTask(t);
           setParsingId(-1);
           startPolling(t.id);
+        } else if (t && t.status === 'succeeded') {
+          refreshAll();
         }
       })
       .catch(() => {});
@@ -109,6 +113,31 @@ export default function CourseDetail() {
     };
   }, [courseId, refreshAll, startPolling]);
 
+  // 点击回放项：仅加载视频到播放器，不启动解析
+  const handleSelectReplay = async (r: Replay) => {
+    if (loadingStream !== null) return;
+    setSelectedReplayId(r.id);
+    setLoadingStream(r.id);
+    try {
+      const res = await fetchReplayStream(courseId, r.id);
+      console.log('[CourseDetail] stream response:', res);
+      const url = typeof res === 'string' ? res : (res?.video_url || '');
+      if (url) {
+        setReplayVideoUrl(url);
+      } else {
+        toast.error('未获取到视频地址');
+      }
+    } catch (err: any) {
+      console.error('[CourseDetail] stream error:', err);
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || '获取视频流失败';
+      toast.error(typeof msg === 'string' ? msg : '获取视频流失败');
+      setReplayVideoUrl('');
+    } finally {
+      setLoadingStream(null);
+    }
+  };
+
+  // 点击解析按钮：启动解析（不阻塞回放切换）
   const handleParseReplay = async (r: Replay) => {
     if (parsingId !== null) return;
     setParsingId(r.id);
@@ -126,6 +155,7 @@ export default function CourseDetail() {
   };
 
   const isParsing = task != null && ACTIVE_STATUSES.has(task.status);
+  const videoUrl = replayVideoUrl || course?.video_url || '';
 
   return (
     <SeekContext.Provider value={seek}>
@@ -143,11 +173,9 @@ export default function CourseDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* 左侧：播放器 + 字幕 + 课程概览 */}
           <div className="lg:col-span-2 space-y-4">
-            {course?.video_url && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden bg-black">
-                <Player src={course.video_url} onTimeUpdate={setCurrentSec} onSeekReady={setSeek} />
-              </div>
-            )}
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-black">
+              <Player src={videoUrl} onTimeUpdate={setCurrentSec} onSeekReady={setSeek} />
+            </div>
             {transcripts.length > 0 && (
               <Subtitle transcripts={transcripts} currentSec={currentSec} onSeek={seek} />
             )}
@@ -161,25 +189,40 @@ export default function CourseDetail() {
                 <h2 className="text-sm font-semibold text-gray-500">回放列表</h2>
                 <div className="space-y-1">
                   {replays.map((r) => (
-                    <button
+                    <div
                       key={r.id}
-                      onClick={() => handleParseReplay(r)}
-                      disabled={isParsing}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 hover:shadow-md hover:border-primary-300 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={`w-full border rounded-lg px-3 py-2 transition-all text-left ${
+                        selectedReplayId === r.id
+                          ? 'border-primary-400 bg-primary-50'
+                          : 'border-gray-200 hover:shadow-md hover:border-primary-300'
+                      }`}
                     >
-                      <div className="text-sm font-medium text-gray-800">
-                        {r.teach_time_str || (r.class_begin_time?.split(' ')[0] ?? '—')}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {r.course_between || ''}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {r.class_room || ''}
-                      </div>
-                      <div className="text-xs text-primary-600 mt-1">
+                      <button
+                        onClick={() => handleSelectReplay(r)}
+                        disabled={loadingStream !== null}
+                        className="w-full text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <div className="text-sm font-medium text-gray-800">
+                          {r.teach_time_str || (r.class_begin_time?.split(' ')[0] ?? '—')}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {r.course_between || ''}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {r.class_room || ''}
+                        </div>
+                        {loadingStream === r.id && (
+                          <div className="text-xs text-primary-600 mt-1">加载视频中...</div>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleParseReplay(r)}
+                        disabled={isParsing}
+                        className="mt-2 w-full text-xs py-1 rounded border border-primary-300 text-primary-600 hover:bg-primary-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
                         {parsingId === r.id ? '解析中...' : isParsing ? '等待中' : '开始解析'}
-                      </div>
-                    </button>
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -190,28 +233,13 @@ export default function CourseDetail() {
         </div>
 
         {isParsing && task && (
-          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
-                {STEP_LABELS[task.status] || task.current_step || task.status}
-              </span>
-              <span className="text-sm text-gray-500">
-                {task.progress}% · 已用 {Math.floor(elapsedSec / 60)}:{String(elapsedSec % 60).padStart(2, '0')}
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-              <div
-                className="bg-primary-500 h-2 rounded-full transition-all duration-500 relative"
-                style={{ width: `${task.progress}%` }}
-              >
-                <span className="absolute right-0 top-0 h-2 w-8 bg-gradient-to-r from-transparent to-white/50 animate-pulse" />
-              </div>
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              {lastUpdateTime ? `最后更新 ${Math.floor((Date.now() - lastUpdateTime) / 1000)}s 前` : ''} · 切换应用后自动恢复
-            </p>
-          </div>
+          <ProgressStepper
+            status={task.status}
+            progress={task.progress}
+            currentStep={task.current_step}
+            elapsedSec={elapsedSec}
+            lastUpdateSec={lastUpdateTime ? Math.floor((Date.now() - lastUpdateTime) / 1000) : -1}
+          />
         )}
       </div>
     </SeekContext.Provider>

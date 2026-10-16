@@ -1,8 +1,7 @@
-import { createContext, useCallback, useEffect, useRef } from 'react';
+import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 
-// 播放器跳转能力上下文。由 CourseDetail 提供 seek 函数，供字幕/重点/导图消费。
 export const SeekContext = createContext<(t: number) => void>(() => {});
 
 interface PlayerProps {
@@ -14,19 +13,41 @@ interface PlayerProps {
 export default function Player({ src, onTimeUpdate, onSeekReady }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const seek = useCallback((t: number) => {
     playerRef.current?.currentTime(t);
   }, []);
 
   useEffect(() => {
-    if (!videoRef.current || !src) return;
-    playerRef.current = videojs(videoRef.current, {
-      controls: true,
-      fluid: true,
-      sources: [{ src }],
-    });
-    playerRef.current.on('timeupdate', () => onTimeUpdate?.(playerRef.current.currentTime()));
+    if (!videoRef.current) return;
+
+    if (playerRef.current) {
+      playerRef.current.dispose();
+      playerRef.current = null;
+    }
+
+    if (!src) return;
+
+    setError(null);
+    try {
+      playerRef.current = videojs(videoRef.current, {
+        controls: true,
+        fluid: true,
+        sources: [{
+          src,
+          type: src.includes('.m3u8') ? 'application/x-mpegURL' : undefined,
+        }],
+      });
+      playerRef.current.on('timeupdate', () => onTimeUpdate?.(playerRef.current.currentTime()));
+      playerRef.current.on('error', () => {
+        const code = playerRef.current?.error()?.code;
+        setError(`视频加载失败 (错误码 ${code})，可能需要先在浏览器中打开视频地址信任证书`);
+      });
+    } catch (err) {
+      console.error('[Player] video.js init error:', err);
+      setError('播放器初始化失败');
+    }
     return () => {
       playerRef.current?.dispose();
       playerRef.current = null;
@@ -34,22 +55,23 @@ export default function Player({ src, onTimeUpdate, onSeekReady }: PlayerProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  // 把 seek 函数上报给父组件（父组件再通过 SeekContext 下发）
   useEffect(() => {
     onSeekReady?.(seek);
   }, [seek, onSeekReady]);
 
-  if (!src) {
-    return (
-      <div className="flex items-center justify-center h-64 text-gray-400 bg-black">
-        暂无视频
-      </div>
-    );
-  }
-
   return (
-    <div data-vjs-player>
-      <video ref={videoRef} className="video-js" />
+    <div data-vjs-player style={{ minHeight: '360px', position: 'relative' }}>
+      <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
+      {!src && (
+        <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-black">
+          暂无视频
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 bg-black/80 z-10 p-4 text-center">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

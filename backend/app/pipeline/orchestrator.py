@@ -46,33 +46,53 @@ def run_pipeline(task_id: int) -> None:
         # ---------- Step 1 元数据（含平台字幕/知识点预取） ----------
         _ensure_deadline(deadline)
         task_service.update_status(db, task_id, "downloading", 5, "metadata")
+        logger.info("[task={}] Step 1/6 元数据", task_id)
         ctx = metadata.fetch_metadata(db, task.course_id)
         course = ctx.course
         reused = _load_parent_results(db, task)
 
         # ---------- Step 2+3 直接从 URL 提取音频（跳过完整视频下载） ----------
-        task_service.update_status(db, task_id, "downloading", 15, "download")
+        task_service.update_status(db, task_id, "downloading", 10, "download")
         audio_path = _reuse_cached(task.audio_cache_path)
         if not audio_path:
-            task_service.update_status(db, task_id, "extracting_audio", 25, "audio")
-            audio_path = download.download_audio_from_url(course.video_url, task.id)
+            task_service.update_status(db, task_id, "extracting_audio", 12, "audio")
+            logger.info("[task={}] Step 2/6 提取音频（ffmpeg 16kHz WAV）", task_id)
+
+            def _on_audio_progress(out_time: str, speed: str, size_kb: int):
+                detail = f"audio|{out_time}|{speed}x|{size_kb}KB"
+                task_service.update_status(db, task_id, "extracting_audio", None, detail)
+
+            audio_path = download.download_audio_from_url(
+                course.video_url, task.id, progress_callback=_on_audio_progress,
+            )
             task.audio_cache_path = audio_path
             db.commit()
+            audio_mb = Path(audio_path).stat().st_size / 1024 / 1024
+            logger.info("[task={}] 音频提取完成：{} ({:.1f}MB)", task_id, audio_path, audio_mb)
+        task_service.update_status(db, task_id, "extracting_audio", 20, "audio")
 
         # ---------- Step 4 转写：优先平台 VTT，否则 ASR ----------
         _ensure_deadline(deadline)
+        task_service.update_status(db, task_id, "asr_running", 25, "asr")
+        if reused["transcripts"]:
+            logger.info("[task={}] Step 3/6 转写（复用父任务）", task_id)
+        transcripts = reused["transcripts"] or _resolve_transcripts(ctx, audio_path, task_id, db, task_id)
+        logger.info("[task={}] 转写完成：{} 句", task_id, len(transcripts))
         task_service.update_status(db, task_id, "asr_running", 50, "asr")
-        transcripts = reused["transcripts"] or _resolve_transcripts(ctx, audio_path, task.id)
 
         # ---------- Step 5 大模型语义解析 ----------
         _ensure_deadline(deadline)
-        task_service.update_status(db, task_id, "llm_running", 75, "llm")
+        task_service.update_status(db, task_id, "llm_running", 55, "llm")
         if reused["complete"]:
-            logger.info("[task={}] 复用父任务 {} 的解析结果，跳过 LLM 调用", task_id, task.parent_task_id)
+            logger.info("[task={}] Step 4/6 LLM（复用父任务 {}）", task_id, task.parent_task_id)
             keypoints, summary, mindmap = reused["keypoints"], reused["summary"], reused["mindmap"]
             failures: list[str] = []
         else:
+            logger.info("[task={}] Step 4/6 LLM 语义解析", task_id)
             keypoints, summary, mindmap, failures = llm.run_llm(transcripts, course, task.id)
+        logger.info("[task={}] LLM 完成：重点 {} 条，总结 {}，导图 {}",
+                     task_id, len(keypoints), bool(summary), bool(mindmap))
+        task_service.update_status(db, task_id, "llm_running", 85, "llm")
 
         keypoints = llm.link_source_transcripts(keypoints, transcripts)
         keypoints = platform_assets.align_keypoints(keypoints, ctx.zsd_items)
@@ -80,7 +100,9 @@ def run_pipeline(task_id: int) -> None:
         # ---------- Step 6 持久化 ----------
         _ensure_deadline(deadline)
         task_service.update_status(db, task_id, "persisting", 90, "persist")
+        logger.info("[task={}] Step 5/6 持久化", task_id)
         persist.save_results(db, task_id, task.course_id, transcripts, keypoints, summary, mindmap)
+        logger.info("[task={}] Step 6/6 完成", task_id)
 
         if failures:
             task_service.mark_failed(db, task_id, LLM_PARTIAL_FAIL,
@@ -133,7 +155,7 @@ def _reuse_cached(path: str | None) -> str | None:
     return None
 
 
-def _resolve_transcripts(ctx: CourseContext, audio_path: str, task_id: int) -> list[dict]:
+def _resolve_transcripts(ctx: CourseContext, audio_path: str, task_id: int, db: Session = None, tid: int = None) -> list[dict]:
     """平台 VTT 覆盖足够时直接使用，否则调用 ASR（docs/10:948）。"""
     duration = ctx.course.duration_sec or 0
     if ctx.vtt_sentences:
@@ -144,7 +166,15 @@ def _resolve_transcripts(ctx: CourseContext, audio_path: str, task_id: int) -> l
             return list(ctx.vtt_sentences)
         logger.warning("[pipeline] 平台字幕覆盖仅 {:.0%}（阈值 {:.0%}），改用 ASR 生成",
                        coverage, settings.vtt_min_coverage)
-    return asr.run_asr(audio_path, task_id)
+
+    def on_progress(current, total, msg):
+        pct = 25 + int(25 * current / max(1, total))
+        if db and tid:
+            detail = f"asr|{current}/{total}|{msg or ''}"
+            task_service.update_status(db, tid, "asr_running", pct, detail)
+        logger.info("[task={}] ASR 进度 {}/{} ({}%)", tid, current, total, pct)
+
+    return asr.run_asr(audio_path, task_id, on_progress)
 
 
 def _load_parent_results(db: Session, task: ParseTask) -> dict:

@@ -15,6 +15,22 @@ from app.core.logging import setup_logging
 async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("启动 {} (env={})", settings.app_name, settings.app_env)
+
+    from app.db.models import ParseTask
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    active_statuses = ["queued", "downloading", "extracting_audio", "asr_running", "llm_running", "persisting"]
+    stale = db.query(ParseTask).filter(ParseTask.status.in_(active_statuses)).all()
+    for t in stale:
+        t.status = "failed"
+        t.error_code = "INTERRUPTED"
+        t.error_message = "后端重启，任务被中断"
+    if stale:
+        db.commit()
+    logger.info("清理 {} 个未完成的解析任务", len(stale))
+    db.close()
+
     yield
     logger.info("关闭 {}", settings.app_name)
 

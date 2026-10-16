@@ -42,10 +42,11 @@ _END_KEYS = ("end", "end_sec", "end_time", "stop", "ed", "to")
 _TEXT_KEYS = ("text", "sentence", "content", "word", "value")
 
 
-def transcribe(audio_path: str) -> list[dict]:
+def transcribe(audio_path: str, progress_callback=None) -> list[dict]:
     """语音转写：音频 → 句级时间戳 ``[{"text", "start_sec", "end_sec"}, ...]``。
 
     这是 pipeline Step 4 的唯一入口，签名必须保持同步。
+    progress_callback(current, total, msg) 可选，用于上报分片进度。
     """
     path = Path(audio_path)
     if not path.is_file():
@@ -53,9 +54,8 @@ def transcribe(audio_path: str) -> list[dict]:
     _ensure_credentials()
 
     if _is_wave(path):
-        sentences = _transcribe_wave(path)
+        sentences = _transcribe_wave(path, progress_callback)
     else:
-        # 非 WAV（理论上不会走到，audio.py 统一产出 16kHz WAV）：整体上传，时间轴按体积估算
         logger.warning("[asr] 输入不是 WAV，按整体上传处理：{}", path.name)
         sentences = _transcribe_single(path, offset=0.0, chunk_end=_estimate_duration(path))
 
@@ -135,10 +135,12 @@ def _is_wave(path: Path) -> bool:
         return False
 
 
-@contextmanager
 def _wav_chunks(audio_path: Path) -> Iterator[tuple[Path, float, float]]:
-    """把 WAV 切成若干分片，yield ``(分片文件, 起始秒, 结束秒)``。"""
-    max_seconds = max(30, settings.siliconflow_asr_chunk_seconds)
+    """把 WAV 切成若干分片，yield ``(分片文件, 起始秒, 结束秒)``。
+
+    用 try/finally 在生成器耗尽或 GC 时清理临时目录。
+    """
+    max_seconds = max(1, settings.siliconflow_asr_chunk_seconds)
     max_bytes = max(1, settings.siliconflow_asr_chunk_max_mb) * 1024 * 1024
     tmpdir = Path(tempfile.mkdtemp(prefix="sf_asr_"))
     try:
@@ -166,26 +168,47 @@ def _wav_chunks(audio_path: Path) -> Iterator[tuple[Path, float, float]]:
                     out.setsampwidth(width)
                     out.setframerate(rate)
                     out.writeframes(frames)
-                try:
-                    yield chunk_path, start_sec, end_sec
-                finally:
-                    chunk_path.unlink(missing_ok=True)
+                yield chunk_path, start_sec, end_sec
+
                 index += 1
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _transcribe_wave(path: Path) -> list[dict]:
-    """按分片逐段转写并拼接全局时间轴。"""
+def _count_wav_chunks(path: Path) -> int:
+    """从 WAV 文件头计算分片总数，无需消耗生成器。"""
+    with wave.open(str(path), "rb") as w:
+        rate = w.getframerate()
+        channels = w.getnchannels()
+        width = w.getsampwidth()
+        total_frames = w.getnframes()
+    frame_bytes = max(1, channels * width)
+    max_seconds = max(1, settings.siliconflow_asr_chunk_seconds)
+    max_bytes = max(1, settings.siliconflow_asr_chunk_max_mb) * 1024 * 1024
+    by_time = int(max_seconds * rate)
+    by_size = int(max_bytes // frame_bytes)
+    frames_per_chunk = max(1, min(by_time, by_size))
+    return max(1, (total_frames + frames_per_chunk - 1) // frames_per_chunk)
+
+
+def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
+    """按分片逐段转写并拼接全局时间轴。
+
+    必须直接迭代 ``_wav_chunks`` 生成器——若先 ``list()`` 耗尽生成器，
+    ``finally`` 会删除临时目录，导致所有分片文件在处理前就消失。
+    """
     sentences: list[dict] = []
+    total = _count_wav_chunks(path)
+    logger.info("[asr] 共 {} 个分片，开始逐片转写", total)
     with httpx.Client(timeout=settings.siliconflow_asr_timeout) as client:
-        with _wav_chunks(path) as chunks:
-            for chunk_path, start_sec, end_sec in chunks:
-                payload = _request_transcription(client, chunk_path)
-                part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
-                logger.info("[asr] 分片 {} 转写 {} 句（{:.0f}s–{:.0f}s）",
-                            chunk_path.name, len(part), start_sec, end_sec)
-                sentences.extend(part)
+        for i, (chunk_path, start_sec, end_sec) in enumerate(_wav_chunks(path)):
+            payload = _request_transcription(client, chunk_path)
+            part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
+            logger.info("[asr] 分片 {}/{} {} 转写 {} 句（{:.0f}s–{:.0f}s）",
+                        i + 1, total, chunk_path.name, len(part), start_sec, end_sec)
+            sentences.extend(part)
+            if progress_callback:
+                progress_callback(i + 1, total, f"ASR {i+1}/{total}")
     return sentences
 
 
@@ -222,7 +245,8 @@ def _sentences_from_payload(payload: dict[str, Any], offset: float, chunk_end: f
     if isinstance(text, str) and text.strip():
         return _from_text(text, offset, chunk_end, estimated=True)
 
-    raise RuntimeError(f"ASR 返回中既无时间戳片段也无文本：{str(payload)[:200]}")
+    logger.warning("[asr] 分片返回空文本（可能为静音段），跳过：{}", str(payload)[:200])
+    return []
 
 
 def _from_segments(segments: list[Any], offset: float) -> list[dict]:

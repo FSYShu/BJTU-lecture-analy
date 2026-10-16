@@ -295,16 +295,7 @@ async def sync_courses_from_ve(cookies: list[dict]) -> tuple[list[dict], list[di
 
             updated_cookies = await context.cookies()
 
-            ve_user_id = await _extract_user_id_from_page(page)
-
-            if ve_user_id is None:
-                all_cookies = await context.cookies()
-                cookie_info = [(c["name"], c["value"][:20], c.get("domain")) for c in all_cookies if c.get("value")]
-                logger.warning(f"ve_user_id 提取失败，cookies: {cookie_info}")
-            else:
-                logger.info(f"VE 内部用户 ID: {ve_user_id}")
-
-            return courses, updated_cookies, ve_user_id
+            return courses, updated_cookies, None
         finally:
             await browser.close()
 

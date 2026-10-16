@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # LLM（A2）：重点 / 分层总结 / 两级思维导图
     siliconflow_model: str = "Qwen/Qwen3-8B"
-    siliconflow_timeout: int = 180
+    siliconflow_timeout: int = 120
     siliconflow_max_retry: int = 3
     # 单次投喂的最大转写字符数，超出后按时间窗口分段做 map-reduce（docs/00:129）
     siliconflow_max_input_chars: int = 12000
