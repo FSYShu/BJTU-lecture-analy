@@ -29,7 +29,7 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-start justify-center">
       <div className="bg-white shadow-lg rounded-xl p-8 max-w-sm w-full mt-32 space-y-4">
-        <h2 className="text-2xl font-bold text-center">交大课录智析</h2>
+        <h2 className="text-2xl font-bold text-center">管理员登录</h2>
         <div className="space-y-2">
           <input
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"

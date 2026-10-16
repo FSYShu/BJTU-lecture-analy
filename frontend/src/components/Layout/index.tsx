@@ -8,7 +8,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/cas-login');
   };
 
   return (
@@ -21,9 +21,12 @@ export default function Layout() {
             <Link to="/admin/auth" className="text-gray-600 hover:text-primary-600 transition-colors">授权管理</Link>
           )}
           {user ? (
-            <button onClick={handleLogout} className="text-gray-400 hover:text-danger-600 transition-colors">退出</button>
+            <>
+              <span className="text-gray-500">{user.username}</span>
+              <button onClick={handleLogout} className="text-gray-400 hover:text-danger-600 transition-colors">退出</button>
+            </>
           ) : (
-            <Link to="/login" className="text-gray-600 hover:text-primary-600 transition-colors">登录</Link>
+            <Link to="/cas-login" className="text-gray-600 hover:text-primary-600 transition-colors">登录</Link>
           )}
         </nav>
       </header>

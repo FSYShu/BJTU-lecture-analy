@@ -14,7 +14,20 @@ export interface Course {
   video_url?: string;
   video_format?: string;
   platform_course_id?: string;
+  course_num?: string;
+  fz_id?: string;
+  platform_c_id?: number;
   source: string;
+}
+
+export interface Replay {
+  id: number;
+  teach_time_str?: string;
+  class_begin_time?: string;
+  class_end_time?: string;
+  course_between?: string;
+  class_room?: string;
+  uuid?: string;
 }
 
 export interface Task {
