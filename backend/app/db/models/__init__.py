@@ -2,6 +2,7 @@
 from app.db.models.authorization import CourseAuthorization
 from app.db.models.course import Course
 from app.db.models.keypoint import Keypoint
+from app.db.models.lecture import Lecture
 from app.db.models.mindmap import Mindmap
 from app.db.models.summary import Summary
 from app.db.models.task import ParseTask
@@ -12,6 +13,7 @@ __all__ = [
     "User",
     "Course",
     "CourseAuthorization",
+    "Lecture",
     "ParseTask",
     "Transcript",
     "Keypoint",

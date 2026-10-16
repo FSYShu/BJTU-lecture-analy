@@ -29,8 +29,8 @@ def ensure_parse_ready(course: Course) -> None:
         raise AppError("VIDEO_URL_MISSING", "课程缺少视频地址，无法开始解析", 400)
 
 
-def create_task(db: Session, course_id: int, user_id: int) -> ParseTask:
-    task = ParseTask(course_id=course_id, initiated_by=user_id, status="queued")
+def create_task(db: Session, course_id: int, user_id: int, lecture_id: int | None = None) -> ParseTask:
+    task = ParseTask(course_id=course_id, lecture_id=lecture_id, initiated_by=user_id, status="queued")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -67,6 +67,16 @@ def get_latest_task_by_course(db: Session, course_id: int) -> ParseTask | None:
     return (
         db.query(ParseTask)
         .filter(ParseTask.course_id == course_id)
+        .order_by(ParseTask.id.desc())
+        .first()
+    )
+
+
+def get_latest_task_by_lecture(db: Session, lecture_id: int) -> ParseTask | None:
+    """按课次回放查最新一条解析任务。"""
+    return (
+        db.query(ParseTask)
+        .filter(ParseTask.lecture_id == lecture_id)
         .order_by(ParseTask.id.desc())
         .first()
     )

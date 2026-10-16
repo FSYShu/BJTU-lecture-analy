@@ -23,6 +23,21 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "cookies_updated_at": "DATETIME",
         "ve_user_id": "INTEGER",
     },
+    "parse_tasks": {
+        "lecture_id": "INTEGER",
+    },
+    "transcripts": {
+        "lecture_id": "INTEGER",
+    },
+    "keypoints": {
+        "lecture_id": "INTEGER",
+    },
+    "summaries": {
+        "lecture_id": "INTEGER",
+    },
+    "mindmaps": {
+        "lecture_id": "INTEGER",
+    },
 }
 
 

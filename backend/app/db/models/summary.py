@@ -13,6 +13,7 @@ class Summary(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("parse_tasks.id"), nullable=False, index=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False, index=True)
+    lecture_id: Mapped[int | None] = mapped_column(Integer, index=True)
     overview: Mapped[str | None] = mapped_column(Text)
     chapter_points: Mapped[str | None] = mapped_column(Text)
     key_details: Mapped[str | None] = mapped_column(Text)

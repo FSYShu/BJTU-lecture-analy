@@ -27,10 +27,21 @@ export default function SummaryView({ summary }: { summary: Summary }) {
       )}
       {details.length > 0 && (
         <section>
-          <h3 className="font-semibold text-base mb-1">重点详解</h3>
-          <ul className="text-sm list-disc pl-5 space-y-1 text-gray-700">
-            {details.map((d, i) => <li key={i}>{typeof d === 'string' ? d : d.text ?? JSON.stringify(d)}</li>)}
-          </ul>
+          <h3 className="font-semibold text-base mb-2">重点详解</h3>
+          <div className="space-y-3">
+            {details.map((d, i) => (
+              <div key={i} className="border-l-2 border-gray-200 pl-3">
+                {typeof d === 'string' ? (
+                  <p className="text-sm text-gray-700 leading-relaxed">{d}</p>
+                ) : (
+                  <>
+                    {d.title && <div className="text-sm font-semibold text-gray-900">{d.title}</div>}
+                    {d.detail && <p className="text-sm text-gray-600 leading-relaxed mt-0.5">{d.detail}</p>}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
       {hints.length > 0 && (

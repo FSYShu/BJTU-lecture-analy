@@ -268,12 +268,12 @@ async def sync_courses_from_ve(cookies: list[dict]) -> tuple[list[dict], list[di
                 wait_until="load",
                 timeout=15000,
             )
-            logger.info(f"同步课程：通过 mis 课程平台入口跳转，当前 URL: {page.url}")
+            logger.info("[platform] 同步课程：通过 mis 课程平台入口跳转，当前 URL: {}", page.url)
 
             try:
                 await page.wait_for_selector(".courseItem", timeout=10000)
             except Exception:
-                logger.warning("等待 .courseItem 超时，课程列表可能未渲染")
+                logger.warning("[platform] 等待 .courseItem 超时，课程列表可能未渲染")
 
             courses = await page.evaluate(
                 """() => Array.from(document.querySelectorAll('.courseItem')).map(el => {
@@ -289,9 +289,9 @@ async def sync_courses_from_ve(cookies: list[dict]) -> tuple[list[dict], list[di
                     };
                 })"""
             )
-            logger.info(f"从 VE 页面 DOM 提取 {len(courses)} 门课程")
+            logger.info("[platform] 从 VE 页面 DOM 提取 {} 门课程", len(courses))
             if courses:
-                logger.info(f"前 3 门: {courses[:3]}")
+                logger.info("[platform] 前 3 门: {}", courses[:3])
 
             updated_cookies = await context.cookies()
 
@@ -328,9 +328,9 @@ async def get_stream_map_via_browser(
             )
             if result:
                 return result, extracted_uid
-            logger.warning("UI 点击方式未获取到 streamMap，回退到直接调用")
+            logger.warning("[platform] UI 点击方式未获取到 streamMap，回退到直接调用")
         except Exception as e:
-            logger.warning(f"UI 点击方式失败: {e}，回退到直接调用")
+            logger.warning("[platform] UI 点击方式失败: {}，回退到直接调用", e)
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -356,7 +356,7 @@ async def get_stream_map_via_browser(
             if not ve_user_id:
                 ve_user_id = await _extract_user_id_from_page(page)
                 if ve_user_id:
-                    logger.info(f"从课程平台页面提取到 ve_user_id={ve_user_id}")
+                    logger.info("[platform] 从课程平台页面提取到 ve_user_id={}", ve_user_id)
                     extracted_uid = ve_user_id
 
             if not ve_user_id:
@@ -369,17 +369,17 @@ async def get_stream_map_via_browser(
                 )
 
             api_url = f"{settings.platform_base_url}{_TEACH_CALENDAR}?method=toDisplyCourseSchedDetail&courseSchedId={course_sched_id}&userLevel=1&userId={ve_user_id}"
-            logger.info(f"API 2 via browser goto: {api_url}")
+            logger.info("[platform] API 2 via browser goto: {}", api_url)
 
             resp = await page.goto(api_url, wait_until="domcontentloaded", timeout=15000)
             body = await resp.text()
             import json as _json
 
             data = _json.loads(body)
-            logger.info(f"API 2 响应 keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+            logger.info("[platform] API 2 响应 keys: {}", list(data.keys()) if isinstance(data, dict) else "not dict")
 
             if "res" not in data:
-                logger.error(f"API 2 响应异常: {data}")
+                logger.error("[platform] API 2 响应异常: {}", data)
                 raise RuntimeError(f"平台返回异常响应: {data}")
             return data["res"]["streamMap"], extracted_uid
         finally:
@@ -424,7 +424,7 @@ async def _get_stream_map_via_ui(
             try:
                 await page.wait_for_selector(".courseItem", timeout=10000)
             except Exception:
-                logger.warning("UI 模式: .courseItem 未找到")
+                logger.warning("[platform] UI 模式: .courseItem 未找到")
                 return None, None
 
             course_items = await page.query_selector_all(".courseItem")
@@ -436,15 +436,15 @@ async def _get_stream_map_via_ui(
                     break
 
             if target_item is None:
-                logger.warning(f"UI 模式: 未找到 cId={platform_c_id} 的课程项")
+                logger.warning("[platform] UI 模式: 未找到 cId={} 的课程项", platform_c_id)
                 return None, None
 
-            logger.info(f"UI 模式: 点击课程项 cId={platform_c_id}")
+            logger.info("[platform] UI 模式: 点击课程项 cId={}", platform_c_id)
             async with context.expect_page(timeout=15000) as new_page_info:
                 await target_item.click()
             detail_page = await new_page_info.value
             await detail_page.wait_for_load_state("domcontentloaded")
-            logger.info(f"UI 模式: 详情页 URL={detail_page.url[:120]}")
+            logger.info("[platform] UI 模式: 详情页 URL={}", detail_page.url[:120])
 
             nav_params = await detail_page.evaluate(
                 """() => {
@@ -477,11 +477,11 @@ async def _get_stream_map_via_ui(
             )
 
             if not nav_params:
-                logger.warning("UI 模式: 未能从 newModuleGoTo 提取导航参数")
+                logger.warning("[platform] UI 模式: 未能从 newModuleGoTo 提取导航参数")
                 await detail_page.close()
                 return None, None
 
-            logger.info(f"UI 模式: 提取到导航参数: {nav_params}")
+            logger.info("[platform] UI 模式: 提取到导航参数: {}", nav_params)
 
             replay_url = (
                 f"http://123.121.147.7:88/ve/back/coursePlatform/coursePlatform.shtml"
@@ -496,7 +496,7 @@ async def _get_stream_map_via_ui(
             if nav_params.get("teacherId"):
                 replay_url += f"&teacherId={nav_params['teacherId']}"
 
-            logger.info(f"UI 模式: 直接导航到视频回放页: {replay_url[:120]}")
+            logger.info("[platform] UI 模式: 直接导航到视频回放页: {}", replay_url[:120])
 
             api2_response_data = None
 
@@ -506,7 +506,7 @@ async def _get_stream_map_via_ui(
                     try:
                         body = await response.text()
                         api2_response_data = _json.loads(body)
-                        logger.info(f"UI 模式: 拦截到 API 2 响应, keys={list(api2_response_data.keys()) if isinstance(api2_response_data, dict) else 'N/A'}")
+                        logger.info("[platform] UI 模式: 拦截到 API 2 响应, keys={}", list(api2_response_data.keys()) if isinstance(api2_response_data, dict) else "N/A")
                     except Exception:
                         pass
 
@@ -514,10 +514,10 @@ async def _get_stream_map_via_ui(
 
             await detail_page.goto(replay_url, wait_until="load", timeout=20000)
             await asyncio.sleep(3)
-            logger.info(f"UI 模式: 回放页加载完成, URL={detail_page.url[:120]}")
+            logger.info("[platform] UI 模式: 回放页加载完成, URL={}", detail_page.url[:120])
 
             page_title = await detail_page.title()
-            logger.info(f"UI 模式: 回放页标题: {page_title}")
+            logger.info("[platform] UI 模式: 回放页标题: {}", page_title)
 
             teacher_id_str = nav_params.get("teacherId", "")
             extracted_user_id = await detail_page.evaluate(
@@ -551,34 +551,34 @@ async def _get_stream_map_via_ui(
                 teacher_id_str,
             )
             if extracted_user_id:
-                logger.info(f"UI 模式: 从回放页 JS 提取到 userId={extracted_user_id}")
+                logger.info("[platform] UI 模式: 从回放页 JS 提取到 userId={}", extracted_user_id)
 
             if extracted_user_id:
                 api_url = f"{settings.platform_base_url}{_TEACH_CALENDAR}?method=toDisplyCourseSchedDetail&courseSchedId={course_sched_id}&userLevel=1&userId={extracted_user_id}"
-                logger.info(f"UI 模式: 直接调 API 2: {api_url[:120]}")
+                logger.info("[platform] UI 模式: 直接调 API 2: {}", api_url[:120])
                 resp = await detail_page.goto(api_url, wait_until="domcontentloaded", timeout=15000)
                 body = await resp.text()
                 data = _json.loads(body)
-                logger.info(f"UI 模式: API 2 响应 keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
+                logger.info("[platform] UI 模式: API 2 响应 keys: {}", list(data.keys()) if isinstance(data, dict) else "N/A")
                 if "res" in data:
                     stream_map = data["res"]["streamMap"]
-                    logger.info(f"UI 模式: 成功获取 streamMap, keys={list(stream_map.keys())}")
+                    logger.info("[platform] UI 模式: 成功获取 streamMap, keys={}", list(stream_map.keys()))
                     await detail_page.close()
                     return stream_map, extracted_user_id
                 else:
-                    logger.error(f"UI 模式: API 2 响应异常: {data}")
+                    logger.error("[platform] UI 模式: API 2 响应异常: {}", data)
 
-            logger.info("UI 模式: 尝试通过点击回放项拦截 API 2 响应")
+            logger.info("[platform] UI 模式: 尝试通过点击回放项拦截 API 2 响应")
             try:
                 await detail_page.goto(replay_url, wait_until="load", timeout=20000)
                 await detail_page.wait_for_selector(".teachingCalendarItem", timeout=15000)
-                logger.info("UI 模式: 回放列表已渲染")
+                logger.info("[platform] UI 模式: 回放列表已渲染")
             except Exception:
-                logger.warning("UI 模式: 等待 .teachingCalendarItem 超时")
+                logger.warning("[platform] UI 模式: 等待 .teachingCalendarItem 超时")
                 html = await detail_page.content()
                 with open("storage/logs/replay_page.html", "w", encoding="utf-8") as f:
                     f.write(html)
-                logger.info("回放页 HTML 已保存到 storage/logs/replay_page.html")
+                logger.info("[platform] 回放页 HTML 已保存到 storage/logs/replay_page.html")
                 await detail_page.close()
                 return None, None
 
@@ -590,7 +590,7 @@ async def _get_stream_map_via_ui(
                     try:
                         body = await response.text()
                         api2_response_data = _json.loads(body)
-                        logger.info(f"UI 模式: 拦截到 API 2 响应, keys={list(api2_response_data.keys()) if isinstance(api2_response_data, dict) else 'N/A'}")
+                        logger.info("[platform] UI 模式: 拦截到 API 2 响应, keys={}", list(api2_response_data.keys()) if isinstance(api2_response_data, dict) else "N/A")
                     except Exception:
                         pass
 
@@ -599,10 +599,10 @@ async def _get_stream_map_via_ui(
             target_selector = f"#sched_{course_sched_id}"
             target_el = await detail_page.query_selector(target_selector)
             if target_el:
-                logger.info(f"UI 模式: 点击回放项 #{target_selector}")
+                logger.info("[platform] UI 模式: 点击回放项 #{}", target_selector)
                 await target_el.click()
             else:
-                logger.warning(f"UI 模式: 未找到 {target_selector}，点击第一个回放项")
+                logger.warning("[platform] UI 模式: 未找到 {}，点击第一个回放项", target_selector)
                 first_item = await detail_page.query_selector(".teachingCalendarItem")
                 if first_item:
                     await first_item.click()
@@ -618,15 +618,15 @@ async def _get_stream_map_via_ui(
             await detail_page.close()
 
             if api2_response_data is None:
-                logger.warning("UI 模式: 未拦截到 API 2 响应")
+                logger.warning("[platform] UI 模式: 未拦截到 API 2 响应")
                 return None, None
 
             if "res" not in api2_response_data:
-                logger.error(f"UI 模式: API 2 响应异常: {api2_response_data}")
+                logger.error("[platform] UI 模式: API 2 响应异常: {}", api2_response_data)
                 return None, None
 
             stream_map = api2_response_data["res"]["streamMap"]
-            logger.info(f"UI 模式: 成功获取 streamMap, keys={list(stream_map.keys())}")
+            logger.info("[platform] UI 模式: 成功获取 streamMap, keys={}", list(stream_map.keys()))
             return stream_map, extracted_user_id
         finally:
             await browser.close()
@@ -656,7 +656,7 @@ async def _extract_user_id_from_page(page) -> int | None:
         }"""
     )
     if teacher_ids:
-        logger.info(f"页面上发现的 teacherId 值: {teacher_ids}（将排除）")
+        logger.info("[platform] 页面上发现的 teacherId 值: {}（将排除）", teacher_ids)
 
     ve_user_id = await page.evaluate(
         """(excludeIds) => {
@@ -708,7 +708,7 @@ async def _extract_user_id_from_page(page) -> int | None:
         teacher_ids or [],
     )
     if ve_user_id:
-        logger.info(f"从课程列表页提取到 ve_user_id={ve_user_id}")
+        logger.info("[platform] 从课程列表页提取到 ve_user_id={}", ve_user_id)
         return ve_user_id
 
     try:
@@ -720,7 +720,7 @@ async def _extract_user_id_from_page(page) -> int | None:
             await course_items[0].click()
         detail_page = await new_page_info.value
         await detail_page.wait_for_load_state("domcontentloaded")
-        logger.info(f"打开课程详情页: {detail_page.url[:100]}")
+        logger.info("[platform] 打开课程详情页: {}", detail_page.url[:100])
 
         detail_teacher_ids = await detail_page.evaluate(
             """() => {
@@ -738,7 +738,7 @@ async def _extract_user_id_from_page(page) -> int | None:
         )
         all_exclude = list(set((teacher_ids or []) + (detail_teacher_ids or [])))
         if detail_teacher_ids:
-            logger.info(f"详情页 teacherId 值: {detail_teacher_ids}（将排除）")
+            logger.info("[platform] 详情页 teacherId 值: {}（将排除）", detail_teacher_ids)
 
         ve_user_id = await detail_page.evaluate(
             """(excludeIds) => {
@@ -773,18 +773,18 @@ async def _extract_user_id_from_page(page) -> int | None:
             all_exclude,
         )
         if ve_user_id:
-            logger.info(f"从课程详情页提取到 ve_user_id={ve_user_id}")
+            logger.info("[platform] 从课程详情页提取到 ve_user_id={}", ve_user_id)
 
         if not ve_user_id:
             captured = await _extract_user_id_from_replay_page(detail_page)
             ve_user_id = captured
             if ve_user_id:
-                logger.info(f"从视频回放页 AJAX 拦截到 ve_user_id={ve_user_id}")
+                logger.info("[platform] 从视频回放页 AJAX 拦截到 ve_user_id={}", ve_user_id)
 
         await detail_page.close()
         return ve_user_id
     except Exception as e:
-        logger.warning(f"从课程详情页提取 ve_user_id 失败: {e}")
+        logger.warning("[platform] 从课程详情页提取 ve_user_id 失败: {}", e)
         return None
 
 
@@ -817,7 +817,7 @@ async def _extract_user_id_from_replay_page(detail_page) -> int | None:
         await replay_menu.click()
         await detail_page.wait_for_load_state("domcontentloaded", timeout=10000)
     except Exception as e:
-        logger.warning(f"点击'视频回放'失败: {e}")
+        logger.warning("[platform] 点击'视频回放'失败: {}", e)
         return None
 
     for _ in range(20):
@@ -870,8 +870,8 @@ async def list_user_courses(cookies: dict) -> list[dict]:
         log_dir.mkdir(parents=True, exist_ok=True)
         (log_dir / "course_platform.html").write_text(html, encoding="utf-8")
         logger.warning(
-            f"课程列表正则未匹配，HTML 已保存到 storage/logs/course_platform.html"
-            f"（长度 {len(html)}，含 goPage: {'goPage' in html}）"
+            "[platform] 课程列表正则未匹配，HTML 已保存到 storage/logs/course_platform.html"
+            "（长度 {}，含 goPage: {}）", len(html), "goPage" in html,
         )
     return courses
 
@@ -906,7 +906,7 @@ async def get_stream_map(cookies: dict, course_sched_id: int, user_id: int) -> d
         resp.raise_for_status()
         data = resp.json()
         if "res" not in data:
-            logger.error(f"get_stream_map 响应异常: {data}")
+            logger.error("[platform] get_stream_map 响应异常: {}", data)
             raise RuntimeError(f"平台返回异常响应: {data}")
         return data["res"]["streamMap"]
 

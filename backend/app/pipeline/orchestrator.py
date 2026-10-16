@@ -34,7 +34,7 @@ def run_pipeline(task_id: int) -> None:
     db: Session = SessionLocal()
     task = db.get(ParseTask, task_id)
     if not task:
-        logger.error("任务 {} 不存在", task_id)
+        logger.error("[task={}] 任务不存在", task_id)
         db.close()
         return
 
@@ -101,7 +101,7 @@ def run_pipeline(task_id: int) -> None:
         _ensure_deadline(deadline)
         task_service.update_status(db, task_id, "persisting", 90, "persist")
         logger.info("[task={}] Step 5/6 持久化", task_id)
-        persist.save_results(db, task_id, task.course_id, transcripts, keypoints, summary, mindmap)
+        persist.save_results(db, task_id, task.course_id, transcripts, keypoints, summary, mindmap, lecture_id=task.lecture_id)
         logger.info("[task={}] Step 6/6 完成", task_id)
 
         if failures:

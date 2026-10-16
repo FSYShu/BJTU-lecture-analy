@@ -13,8 +13,16 @@ router = APIRouter()
 
 
 @router.get("/latest", response_model=TaskOut)
-def get_latest_task(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
-    task = task_service.get_latest_task_by_course(db, course_id)
+def get_latest_task(
+    lecture_id: int | None = None,
+    course_id: int | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ParseTask:
+    if lecture_id:
+        task = task_service.get_latest_task_by_lecture(db, lecture_id)
+    else:
+        task = task_service.get_latest_task_by_course(db, course_id or 0)
     if not task:
         raise HTTPException(404, "该课程暂无解析任务")
     return task

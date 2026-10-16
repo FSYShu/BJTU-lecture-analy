@@ -13,7 +13,6 @@ export default function MindmapView({ mindmap, onSeek }: MindmapProps) {
   const mmRef = useRef<Markmap | null>(null);
   const onSeekRef = useRef(onSeek);
 
-  // 用 ref 持有最新 onSeek，避免因 seek 函数变化重建 markmap
   useEffect(() => {
     onSeekRef.current = onSeek;
   }, [onSeek]);
@@ -30,20 +29,28 @@ export default function MindmapView({ mindmap, onSeek }: MindmapProps) {
       mmRef.current.setData(root);
     }
 
-    const mm = mmRef.current;
-    // 覆盖点击处理：从节点内容解析 @timestamp 触发跳转，同时保留节点折叠行为
-    const original = mm.handleClick.bind(mm);
-    mm.handleClick = (e, node) => {
-      const m = /@(\d+(?:\.\d+)?)/.exec(node?.content || '');
-      if (m) onSeekRef.current?.(parseFloat(m[1]));
-      original(e, node);
-    };
-
     return () => {
       mmRef.current?.destroy();
       mmRef.current = null;
     };
   }, [md]);
+
+  // 事件委托：markmap 仅在折叠圆点上绑 click，节点文本无 click，
+  // 故在 svg 上委托，命中带 data-t 的元素即跳转到对应时间
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onClick = (ev: MouseEvent) => {
+      const target = ev.target as HTMLElement | null;
+      const el = target?.closest?.('[data-t]');
+      if (el) {
+        const t = parseFloat(el.getAttribute('data-t') || '');
+        if (!Number.isNaN(t)) onSeekRef.current?.(t);
+      }
+    };
+    svg.addEventListener('click', onClick);
+    return () => svg.removeEventListener('click', onClick);
+  }, []);
 
   return (
     <div className="border border-gray-200 rounded-lg p-2">
@@ -60,7 +67,10 @@ function buildMarkdown(m: Mindmap): string {
   for (const mod of nodes) {
     md += `## ${mod.module}\n`;
     for (const kp of mod.knowledge_points || []) {
-      md += `- ${kp.name}${kp.timestamp_sec != null ? ` @${kp.timestamp_sec}` : ''}\n`;
+      const name = String(kp.name ?? '');
+      md += kp.timestamp_sec != null
+        ? `- <span data-t="${kp.timestamp_sec}">${name}</span>\n`
+        : `- ${name}\n`;
     }
   }
   return md;

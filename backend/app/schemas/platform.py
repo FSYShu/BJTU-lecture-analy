@@ -28,6 +28,7 @@ class SyncCoursesOut(BaseModel):
 
 class ReplayOut(BaseModel):
     id: int
+    lecture_id: int | None = None
     video_id: str | None = None
     class_room: str | None = None
     course_name: str | None = None

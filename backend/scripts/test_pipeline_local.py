@@ -33,7 +33,7 @@ logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <l
 
 
 def step(msg: str) -> None:
-    logger.info(f"▶ {msg}")
+    logger.info("[test] ▶ {}", msg)
 
 
 @with_retry(max_attempts=settings.siliconflow_max_retry, step_name="test-keypoints")
@@ -75,7 +75,7 @@ def extract_audio(source: str, out_path: str) -> str:
     )
 
     size_mb = out.stat().st_size / 1024 / 1024
-    logger.info(f"  ✓ 音频文件 {size_mb:.1f}MB")
+    logger.info("[test]   ✓ 音频文件 {:.1f}MB", size_mb)
     return str(out)
 
 
@@ -87,14 +87,14 @@ def run_asr(audio_path: str) -> list[dict]:
     t0 = time.time()
     sentences = siliconflow_asr.transcribe(audio_path)
     elapsed = time.time() - t0
-    logger.info(f"  ✓ {len(sentences)} 句，耗时 {elapsed:.1f}s")
+    logger.info("[test]   ✓ {} 句，耗时 {:.1f}s", len(sentences), elapsed)
 
     for s in sentences[:5]:
         start = s.get("start_sec", 0)
         text = s.get("text", "")
-        logger.info(f"    [{start:.1f}s] {text[:60]}")
+        logger.info("[test]     [{:.1f}s] {}", start, text[:60])
     if len(sentences) > 5:
-        logger.info(f"    ... 共 {len(sentences)} 句")
+        logger.info("[test]     ... 共 {} 句", len(sentences))
     return sentences
 
 
@@ -105,7 +105,7 @@ def run_llm(transcripts: list[dict], course_title: str = "测试课程", out_dir
         for t in transcripts if t.get("text", "").strip()
     )
     if not text:
-        logger.warning("转写为空，跳过 LLM")
+        logger.warning("[test] 转写为空，跳过 LLM")
         return
 
     failures: list[str] = []
@@ -114,48 +114,48 @@ def run_llm(transcripts: list[dict], course_title: str = "测试课程", out_dir
     try:
         t0 = time.time()
         keypoints = _llm_keypoints(text, course_title)
-        logger.info(f"  ✓ {len(keypoints)} 条重点，耗时 {time.time() - t0:.1f}s")
+        logger.info("[test]   ✓ {} 条重点，耗时 {:.1f}s", len(keypoints), time.time() - t0)
         for kp in keypoints[:3]:
-            logger.info(f"    [{kp.get('timestamp_sec', 0):.0f}s] {kp.get('title', '')}")
+            logger.info("[test]     [{:.0f}s] {}", kp.get('timestamp_sec', 0), kp.get('title', ''))
         if out_dir:
             p = out_dir / "keypoints.json"
             p.write_text(json.dumps(keypoints, ensure_ascii=False, indent=2), encoding="utf-8")
-            logger.info(f"  重点已保存: {p}")
+            logger.info("[test]   重点已保存: {}", p)
     except Exception as e:
-        logger.error(f"  ✗ 重点生成失败: {e}")
+        logger.error("[test]   ✗ 重点生成失败: {}", e)
         failures.append("keypoints")
 
     step("LLM 生成总结")
     try:
         t0 = time.time()
         summary = _llm_summary(text, course_title)
-        logger.info(f"  ✓ 总结生成完成，耗时 {time.time() - t0:.1f}s")
+        logger.info("[test]   ✓ 总结生成完成，耗时 {:.1f}s", time.time() - t0)
         overview = summary.get("overview", "")
-        logger.info(f"    概述: {overview[:120]}...")
+        logger.info("[test]     概述: {}...", overview[:120])
         if out_dir:
             p = out_dir / "summary.json"
             p.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-            logger.info(f"  总结已保存: {p}")
+            logger.info("[test]   总结已保存: {}", p)
     except Exception as e:
-        logger.error(f"  ✗ 总结生成失败: {e}")
+        logger.error("[test]   ✗ 总结生成失败: {}", e)
         failures.append("summary")
 
     step("LLM 生成思维导图")
     try:
         t0 = time.time()
         mindmap = _llm_mindmap(text, course_title)
-        logger.info(f"  ✓ 导图生成完成，耗时 {time.time() - t0:.1f}s")
-        logger.info(f"    根节点: {mindmap.get('root_topic', '')}")
+        logger.info("[test]   ✓ 导图生成完成，耗时 {:.1f}s", time.time() - t0)
+        logger.info("[test]     根节点: {}", mindmap.get('root_topic', ''))
         if out_dir:
             p = out_dir / "mindmap.json"
             p.write_text(json.dumps(mindmap, ensure_ascii=False, indent=2), encoding="utf-8")
-            logger.info(f"  导图已保存: {p}")
+            logger.info("[test]   导图已保存: {}", p)
     except Exception as e:
-        logger.error(f"  ✗ 导图生成失败: {e}")
+        logger.error("[test]   ✗ 导图生成失败: {}", e)
         failures.append("mindmap")
 
     if failures:
-        logger.warning(f"部分失败: {failures}")
+        logger.warning("[test] 部分失败: {}", failures)
 
 
 def main():
@@ -187,12 +187,12 @@ def main():
         if args.transcripts:
             step(f"加载已有转写: {args.transcripts}")
             transcripts = json.loads(Path(args.transcripts).read_text(encoding="utf-8"))
-            logger.info(f"  ✓ {len(transcripts)} 句")
+            logger.info("[test]   ✓ {} 句", len(transcripts))
         elif audio_path:
             transcripts = run_asr(audio_path)
             tp = out_dir / "transcripts.json"
             tp.write_text(json.dumps(transcripts, ensure_ascii=False, indent=2), encoding="utf-8")
-            logger.info(f"  转写已保存: {tp}")
+            logger.info("[test]   转写已保存: {}", tp)
     elif args.transcripts:
         transcripts = json.loads(Path(args.transcripts).read_text(encoding="utf-8"))
 
@@ -200,7 +200,7 @@ def main():
     if not args.no_llm and transcripts:
         run_llm(transcripts, args.title, out_dir)
 
-    logger.info("完成")
+    logger.info("[test] 完成")
 
 
 if __name__ == "__main__":

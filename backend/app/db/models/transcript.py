@@ -14,6 +14,7 @@ class Transcript(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("parse_tasks.id"), nullable=False, index=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False, index=True)
+    lecture_id: Mapped[int | None] = mapped_column(Integer, index=True)
     seq_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     start_sec: Mapped[float] = mapped_column(Float, nullable=False)

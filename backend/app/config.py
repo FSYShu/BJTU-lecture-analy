@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # 长回放切片：单分片最长时长（秒）与最大体积（MB）
     siliconflow_asr_chunk_seconds: int = 480
     siliconflow_asr_chunk_max_mb: int = 20
+    # 并行转写分片数（ThreadPoolExecutor workers）
+    siliconflow_asr_workers: int = 4
     # 接口不返回时间戳时，是否退回按字数估算时间轴（可用但精度下降）
     siliconflow_asr_allow_estimated_timestamps: bool = True
 

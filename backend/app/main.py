@@ -14,7 +14,7 @@ from app.core.logging import setup_logging
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    logger.info("启动 {} (env={})", settings.app_name, settings.app_env)
+    logger.info("[app] 启动 {} (env={})", settings.app_name, settings.app_env)
 
     from app.db.models import ParseTask
     from app.db.session import SessionLocal
@@ -28,11 +28,11 @@ async def lifespan(app: FastAPI):
         t.error_message = "后端重启，任务被中断"
     if stale:
         db.commit()
-    logger.info("清理 {} 个未完成的解析任务", len(stale))
+    logger.info("[app] 清理 {} 个未完成的解析任务", len(stale))
     db.close()
 
     yield
-    logger.info("关闭 {}", settings.app_name)
+    logger.info("[app] 关闭 {}", settings.app_name)
 
 
 app = FastAPI(

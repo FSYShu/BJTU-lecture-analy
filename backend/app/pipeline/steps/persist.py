@@ -30,16 +30,17 @@ def save_results(
     keypoints: list[dict],
     summary: dict,
     mindmap: dict,
+    lecture_id: int | None = None,
 ) -> None:
     course = db.get(Course, course_id)
     duration = float(course.duration_sec or 0)
     now = datetime.now(timezone.utc)
 
     try:
-        seq_to_id = _save_transcripts(db, task_id, course_id, transcripts, duration, now)
-        _save_keypoints(db, task_id, course_id, keypoints, duration, now, seq_to_id)
-        _save_summary(db, task_id, course_id, summary, now)
-        _save_mindmap(db, task_id, course_id, mindmap, course, now)
+        seq_to_id = _save_transcripts(db, task_id, course_id, transcripts, duration, now, lecture_id)
+        _save_keypoints(db, task_id, course_id, keypoints, duration, now, seq_to_id, lecture_id)
+        _save_summary(db, task_id, course_id, summary, now, lecture_id)
+        _save_mindmap(db, task_id, course_id, mindmap, course, now, lecture_id)
         db.commit()
     except Exception as exc:  # noqa: BLE001 - 统一翻译为 PERSIST_FAIL
         db.rollback()
@@ -53,6 +54,7 @@ def _save_transcripts(
     transcripts: list[dict],
     duration: float,
     now: datetime,
+    lecture_id: int | None = None,
 ) -> dict[int, int]:
     """写入转写，返回 ``{seq_index: transcript.id}`` 供重点溯源。"""
     rows: list[Transcript] = []
@@ -74,6 +76,7 @@ def _save_transcripts(
         row = Transcript(
             task_id=task_id,
             course_id=course_id,
+            lecture_id=lecture_id,
             seq_index=len(rows),
             text=text,
             start_sec=round(start, 2),
@@ -106,6 +109,7 @@ def _save_keypoints(
     duration: float,
     now: datetime,
     seq_to_id: dict[int, int],
+    lecture_id: int | None = None,
 ) -> None:
     ordered = sorted(
         (item for item in (keypoints or []) if isinstance(item, dict)),
@@ -130,6 +134,7 @@ def _save_keypoints(
         db.add(Keypoint(
             task_id=task_id,
             course_id=course_id,
+            lecture_id=lecture_id,
             seq_index=saved,
             title=title[:255],
             category=category,
@@ -159,7 +164,7 @@ def _resolve_source_ids(item: dict, seq_to_id: dict[int, int]) -> list[int]:
     return ids
 
 
-def _save_summary(db: Session, task_id: int, course_id: int, summary: dict, now: datetime) -> None:
+def _save_summary(db: Session, task_id: int, course_id: int, summary: dict, now: datetime, lecture_id: int | None = None) -> None:
     if not isinstance(summary, dict) or not any(
         summary.get(key) for key in ("overview", "chapter_points", "key_details", "review_hints")
     ):
@@ -169,6 +174,7 @@ def _save_summary(db: Session, task_id: int, course_id: int, summary: dict, now:
     db.add(Summary(
         task_id=task_id,
         course_id=course_id,
+        lecture_id=lecture_id,
         overview=summary.get("overview"),
         chapter_points=json.dumps(summary.get("chapter_points", []), ensure_ascii=False),
         key_details=json.dumps(summary.get("key_details", []), ensure_ascii=False),
@@ -186,6 +192,7 @@ def _save_mindmap(
     mindmap: dict,
     course: Course | None,
     now: datetime,
+    lecture_id: int | None = None,
 ) -> None:
     if not isinstance(mindmap, dict) or not mindmap.get("nodes"):
         logger.warning("[persist] 思维导图为空，跳过写入（前端按“尚未生成”展示）")
@@ -194,6 +201,7 @@ def _save_mindmap(
     db.add(Mindmap(
         task_id=task_id,
         course_id=course_id,
+        lecture_id=lecture_id,
         root_topic=str(mindmap.get("root_topic") or (course.title if course else ""))[:255],
         nodes=json.dumps(mindmap.get("nodes", []), ensure_ascii=False),
         ai_generated=True,

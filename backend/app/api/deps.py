@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import AuthError, ForbiddenError
 from app.core.security import decode_access_token
-from app.db.models import CourseAuthorization, User
+from app.db.models import CourseAuthorization, Lecture, User
 from app.db.session import get_db
 
 
@@ -55,3 +55,17 @@ def require_course_access(course_id: int, user: User = Depends(get_current_user)
     if auth.valid_until is not None and auth.valid_until < now:
         raise ForbiddenError("课程授权已过期")
     return user
+
+def require_lecture_access(
+    lecture_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Lecture:
+    """按回放 id 校验权限：查 lecture → 复用课程级授权校验。"""
+    from app.core.exceptions import AppError
+
+    lecture = db.get(Lecture, lecture_id)
+    if not lecture:
+        raise AppError(code="NOT_FOUND", message="回放不存在", status_code=404)
+    require_course_access(lecture.course_id, user, db)
+    return lecture

@@ -19,7 +19,7 @@ _running_lock = threading.Lock()
 
 
 def run(task_id: int) -> None:
-    logger.info("解析任务 {} 进入队列（并发上限 {}）", task_id, settings.task_max_concurrent)
+    logger.info("[worker] 解析任务 {} 进入队列（并发上限 {}）", task_id, settings.task_max_concurrent)
     with _task_slots:
         _mark_started(task_id)
         try:
@@ -32,11 +32,11 @@ def _mark_started(task_id: int) -> None:
     global _running
     with _running_lock:
         _running += 1
-        logger.info("开始执行解析任务 task_id={}（当前并发 {}）", task_id, _running)
+        logger.info("[worker] 开始执行解析任务 task_id={}（当前并发 {}）", task_id, _running)
 
 
 def _mark_finished(task_id: int) -> None:
     global _running
     with _running_lock:
         _running = max(0, _running - 1)
-        logger.info("解析任务 task_id={} 结束（当前并发 {}）", task_id, _running)
+        logger.info("[worker] 解析任务 task_id={} 结束（当前并发 {}）", task_id, _running)

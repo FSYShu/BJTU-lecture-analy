@@ -27,6 +27,7 @@ export default function CourseDetail() {
   const [seek, setSeek] = useState<(t: number) => void>(() => {});
   const [replays, setReplays] = useState<Replay[]>([]);
   const [selectedReplayId, setSelectedReplayId] = useState<number | null>(null);
+
   const [replayVideoUrl, setReplayVideoUrl] = useState<string>('');
   const [loadingStream, setLoadingStream] = useState<number | null>(null);
   const [parsingId, setParsingId] = useState<number | null>(null);
@@ -36,20 +37,18 @@ export default function CourseDetail() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refreshAll = useCallback(() => {
-    getCourse(courseId).then(setCourse).catch(() => {});
-    listTranscripts(courseId).then(setTranscripts).catch(() => {});
-    listKeypoints(courseId).then(setKeypoints).catch(() => {});
-    getSummary(courseId).then(setSummary).catch(() => {});
-    getMindmap(courseId).then(setMindmap).catch(() => {});
-  }, [courseId]);
+  const refreshAll = useCallback((lectureId: number) => {
+    listTranscripts(lectureId).then(setTranscripts).catch(() => {});
+    listKeypoints(lectureId).then(setKeypoints).catch(() => {});
+    getSummary(lectureId).then(setSummary).catch(() => {});
+    getMindmap(lectureId).then(setMindmap).catch(() => {});
+  }, []);
 
-  const refreshBasic = useCallback(() => {
-    getCourse(courseId).then(setCourse).catch(() => {});
-    listTranscripts(courseId).then(setTranscripts).catch(() => {});
-  }, [courseId]);
+  const refreshBasic = useCallback((lectureId: number) => {
+    listTranscripts(lectureId).then(setTranscripts).catch(() => {});
+  }, []);
 
-  const startPolling = useCallback((taskId: number) => {
+  const startPolling = useCallback((taskId: number, lectureId: number | null) => {
     if (pollRef.current) clearInterval(pollRef.current);
     setTaskStartTime(Date.now());
     setLastUpdateTime(Date.now());
@@ -63,7 +62,7 @@ export default function CourseDetail() {
           pollRef.current = null;
           setParsingId(null);
           setTaskStartTime(null);
-          refreshAll();
+          if (lectureId) refreshAll(lectureId);
         } else if (t.status === 'failed') {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
@@ -71,7 +70,7 @@ export default function CourseDetail() {
           setTaskStartTime(null);
           toast.error(t.error_message || '解析失败');
         } else {
-          refreshBasic();
+          if (lectureId) refreshBasic(lectureId);
         }
       } catch {
         if (pollRef.current) clearInterval(pollRef.current);
@@ -80,7 +79,7 @@ export default function CourseDetail() {
         setTaskStartTime(null);
       }
     }, 3000);
-  }, [refreshAll]);
+  }, [refreshAll, refreshBasic]);
 
   useEffect(() => {
     if (taskStartTime) {
@@ -89,21 +88,39 @@ export default function CourseDetail() {
     }
   }, [taskStartTime]);
 
+  // 进入详情：加载课程 + 回放列表，自动选中第一个回放并加载播放器与对应 AI 解析
   useEffect(() => {
-    refreshBasic();
-    listKeypoints(courseId).then(setKeypoints).catch(() => {});
+    getCourse(courseId).then(setCourse).catch(() => {});
     fetchReplays(courseId)
-      .then((list) => setReplays(list))
-      .catch(() => {});
+      .then(async (list) => {
+        setReplays(list);
+        if (list.length > 0) {
+          const first = list[0];
+          setSelectedReplayId(first.id);
 
-    getLatestTask(courseId)
-      .then((t) => {
-        if (t && ACTIVE_STATUSES.has(t.status)) {
-          setTask(t);
-          setParsingId(-1);
-          startPolling(t.id);
-        } else if (t && t.status === 'succeeded') {
-          refreshAll();
+          setLoadingStream(first.id);
+          try {
+            const res = await fetchReplayStream(courseId, first.id);
+            const url = typeof res === 'string' ? res : (res?.video_url || '');
+            if (url) setReplayVideoUrl(url);
+          } catch {
+            /* 静默 */
+          } finally {
+            setLoadingStream(null);
+          }
+          const lid = first.lecture_id;
+          if (lid) {
+            refreshAll(lid);
+            getLatestTask(lid)
+              .then((t) => {
+                if (t && ACTIVE_STATUSES.has(t.status)) {
+                  setTask(t);
+                  setParsingId(-1);
+                  startPolling(t.id, lid);
+                }
+              })
+              .catch(() => {});
+          }
         }
       })
       .catch(() => {});
@@ -113,14 +130,15 @@ export default function CourseDetail() {
     };
   }, [courseId, refreshAll, startPolling]);
 
-  // 点击回放项：仅加载视频到播放器，不启动解析
+  // 点击回放项：加载视频 + 对应 AI 解析
   const handleSelectReplay = async (r: Replay) => {
     if (loadingStream !== null) return;
     setSelectedReplayId(r.id);
+    const lid = r.lecture_id ?? null;
+
     setLoadingStream(r.id);
     try {
       const res = await fetchReplayStream(courseId, r.id);
-      console.log('[CourseDetail] stream response:', res);
       const url = typeof res === 'string' ? res : (res?.video_url || '');
       if (url) {
         setReplayVideoUrl(url);
@@ -128,16 +146,40 @@ export default function CourseDetail() {
         toast.error('未获取到视频地址');
       }
     } catch (err: any) {
-      console.error('[CourseDetail] stream error:', err);
       const msg = err?.response?.data?.detail || err?.response?.data?.message || '获取视频流失败';
       toast.error(typeof msg === 'string' ? msg : '获取视频流失败');
       setReplayVideoUrl('');
     } finally {
       setLoadingStream(null);
     }
+    if (lid) {
+      refreshAll(lid);
+      getLatestTask(lid)
+        .then((t) => {
+          if (t && ACTIVE_STATUSES.has(t.status)) {
+            setTask(t);
+            setParsingId(-1);
+            startPolling(t.id, lid);
+          } else {
+            setTask(null);
+            setParsingId(null);
+          }
+        })
+        .catch(() => {
+          setTask(null);
+          setParsingId(null);
+        });
+    } else {
+      setTranscripts([]);
+      setKeypoints([]);
+      setSummary(null);
+      setMindmap(null);
+      setTask(null);
+      setParsingId(null);
+    }
   };
 
-  // 点击解析按钮：启动解析（不阻塞回放切换）
+  // 点击解析按钮：启动解析
   const handleParseReplay = async (r: Replay) => {
     if (parsingId !== null) return;
     setParsingId(r.id);
@@ -145,8 +187,7 @@ export default function CourseDetail() {
       const res: Task = await parseReplay(courseId, r.id);
       toast.success('已开始解析');
       setTask(res);
-      getCourse(courseId).then(setCourse).catch(() => {});
-      startPolling(res.id);
+      startPolling(res.id, r.lecture_id ?? null);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || '发起解析失败';
       toast.error(typeof msg === 'string' ? msg : '发起解析失败');

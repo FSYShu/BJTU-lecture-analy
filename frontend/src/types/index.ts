@@ -22,6 +22,7 @@ export interface Course {
 
 export interface Replay {
   id: number;
+  lecture_id?: number;
   teach_time_str?: string;
   class_begin_time?: string;
   class_end_time?: string;
@@ -33,6 +34,7 @@ export interface Replay {
 export interface Task {
   id: number;
   course_id: number;
+  lecture_id?: number;
   status: string;
   progress: number;
   current_step?: string;

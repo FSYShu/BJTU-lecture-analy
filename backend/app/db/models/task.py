@@ -18,6 +18,7 @@ class ParseTask(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False, index=True)
+    lecture_id: Mapped[int | None] = mapped_column(Integer, index=True)
     initiated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(24), nullable=False, index=True, default="queued")
     progress: Mapped[int] = mapped_column(Integer, default=0)

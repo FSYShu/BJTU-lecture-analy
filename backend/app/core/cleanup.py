@@ -24,7 +24,7 @@ def cleanup_dir(dir_path: str, retention_days: int) -> int:
                 f.unlink()
                 removed += 1
         except OSError as e:
-            logger.warning("清理失败 {}: {}", f, e)
+            logger.warning("[cleanup] 清理失败 {}: {}", f, e)
     return removed
 
 
@@ -35,9 +35,9 @@ def cleanup_audio_file(audio_path: str) -> None:
     if p.exists():
         try:
             p.unlink()
-            logger.info("已清理中间音频: {}", p)
+            logger.info("[cleanup] 已清理中间音频: {}", p)
         except OSError as e:
-            logger.warning("清理音频失败 {}: {}", p, e)
+            logger.warning("[cleanup] 清理音频失败 {}: {}", p, e)
 
 
 def run_scheduled_cleanup() -> dict[str, int]:

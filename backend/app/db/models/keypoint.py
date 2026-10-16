@@ -19,6 +19,7 @@ class Keypoint(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("parse_tasks.id"), nullable=False, index=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False, index=True)
+    lecture_id: Mapped[int | None] = mapped_column(Integer, index=True)
     seq_index: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(24))
