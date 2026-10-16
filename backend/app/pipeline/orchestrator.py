@@ -50,16 +50,14 @@ def run_pipeline(task_id: int) -> None:
         course = ctx.course
         reused = _load_parent_results(db, task)
 
-        # ---------- Step 2 视频下载（可复用重试任务的缓存） ----------
+        # ---------- Step 2+3 直接从 URL 提取音频（跳过完整视频下载） ----------
         task_service.update_status(db, task_id, "downloading", 15, "download")
-        video_path = _reuse_cached(task.video_cache_path) or download.download_video(course.video_url, task.id)
-
-        # ---------- Step 3 音频提取（可复用缓存） ----------
-        task_service.update_status(db, task_id, "extracting_audio", 30, "audio")
-        audio_path = _reuse_cached(task.audio_cache_path) or audio.extract_and_denoise(video_path, task.id)
-        task.video_cache_path = video_path
-        task.audio_cache_path = audio_path
-        db.commit()
+        audio_path = _reuse_cached(task.audio_cache_path)
+        if not audio_path:
+            task_service.update_status(db, task_id, "extracting_audio", 25, "audio")
+            audio_path = download.download_audio_from_url(course.video_url, task.id)
+            task.audio_cache_path = audio_path
+            db.commit()
 
         # ---------- Step 4 转写：优先平台 VTT，否则 ASR ----------
         _ensure_deadline(deadline)

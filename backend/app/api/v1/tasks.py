@@ -38,5 +38,6 @@ def retry_task(task_id: int, bg: BackgroundTasks, user: User = Depends(get_curre
         raise HTTPException(404, "任务对应的课程不存在")
     task_service.ensure_parse_ready(course)
     new_task = task_service.retry_task(db, task_id, user.id)
-    bg.add_task(parse_worker_run, new_task.id)
+    import threading
+    threading.Thread(target=parse_worker_run, args=(new_task.id,), daemon=True).start()
     return new_task

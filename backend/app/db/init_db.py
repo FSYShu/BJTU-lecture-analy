@@ -11,7 +11,18 @@ from app.db.session import engine
 
 # 表名 -> {列名: DDL 类型}
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "courses": {"platform_replay_id": "VARCHAR(64)"},
+    "courses": {
+        "platform_replay_id": "VARCHAR(64)",
+        "course_num": "VARCHAR(32)",
+        "fz_id": "VARCHAR(32)",
+        "platform_c_id": "INTEGER",
+    },
+    "users": {
+        "platform_user_id": "INTEGER",
+        "platform_cookies": "VARCHAR(4096)",
+        "cookies_updated_at": "DATETIME",
+        "ve_user_id": "INTEGER",
+    },
 }
 
 

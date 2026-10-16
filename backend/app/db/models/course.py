@@ -20,6 +20,9 @@ class Course(Base):
     video_format: Mapped[str | None] = mapped_column(String(8))
     source: Mapped[str] = mapped_column(String(16), default="manual")
     platform_course_id: Mapped[str | None] = mapped_column(String(64))
+    course_num: Mapped[str | None] = mapped_column(String(32))
+    fz_id: Mapped[str | None] = mapped_column(String(32))
+    platform_c_id: Mapped[int | None] = mapped_column(Integer)
     # 平台回放 id（rpId/videoId）：平台知识点 API 3 与字幕 API 6 的入参，见 docs/10:205-206
     platform_replay_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

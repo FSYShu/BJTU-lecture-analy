@@ -21,11 +21,7 @@ def ensure_parse_ready(course: Course) -> None:
     if course.source == "platform":
         if not settings.platform_base_url:
             missing.append("PLATFORM_BASE_URL")
-        if not (settings.platform_username and settings.platform_password):
-            missing.append(
-                "PLATFORM_USERNAME / PLATFORM_PASSWORD"
-                "（后台解析需自动登录课程平台；也可改用人工导入课程再解析）"
-            )
+
     if missing:
         raise AppError("AI_CREDENTIALS_MISSING", "解析任务缺少必要配置：" + "、".join(missing), 400)
 

@@ -47,9 +47,12 @@ cp .env.example .env
 ```bash
 cd backend
 uv sync                 # 按 pyproject.toml + uv.lock 安装锁定依赖
+uv run playwright install chromium   # 安装 Playwright 浏览器二进制（CAS 登录依赖）
 uv run python scripts/init_db.py   # 初始化 SQLite 表
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run python run.py              # 启动后端（单进程 + ProactorEventLoop）
 ```
+
+> **Windows 注意**：不要用 `uvicorn --reload` 启动。reload 会强制 `WindowsSelectorEventLoop`，而 Playwright async API 依赖 `ProactorEventLoop` 的 subprocess 支持，二者冲突会导致 CAS 登录 500。`run.py` 已显式设置 `ProactorEventLoop` 并单进程启动；改代码后需手动重启（Ctrl+C 后重新运行）。
 
 API 文档：http://localhost:8000/docs
 
@@ -62,6 +65,12 @@ npm run dev
 ```
 
 前端：http://localhost:5173
+
+### 登录
+
+- **默认入口**：打开前端即跳转 `/cas-login`（北交大统一身份认证）。输入学号/教工号 + 密码，页面自动加载 CAS 验证码图（可点击刷新），填入验证码后登录。
+- **管理员入口**：`/cas-login` 页面右上角"管理员登录"链接 → `/login`（本系统账号密码登录）。
+- CAS 登录成功后，后端按北交大学号自动创建本系统用户（role=teacher）并签发 JWT。
 
 ### 4. 一键容器化（可选，保证多电脑环境一致）
 

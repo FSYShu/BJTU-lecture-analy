@@ -41,6 +41,11 @@ def fetch_metadata(db: Session, course_id: int) -> CourseContext:
     if course.source != "platform":
         return CourseContext(course=course)
 
+    # 平台课程但 video_url 已由 parse_replay 端点设置，无需再次拉取平台元数据
+    if course.video_url:
+        logger.info("[metadata] video_url 已存在，跳过平台元数据拉取")
+        return CourseContext(course=course)
+
     if not course.platform_course_id:
         raise StepError("PLATFORM_UNRECOGNIZED", "平台课程缺少 platform_course_id", step="metadata")
 

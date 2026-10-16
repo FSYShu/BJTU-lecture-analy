@@ -179,12 +179,13 @@ def _transcribe_wave(path: Path) -> list[dict]:
     """按分片逐段转写并拼接全局时间轴。"""
     sentences: list[dict] = []
     with httpx.Client(timeout=settings.siliconflow_asr_timeout) as client:
-        for chunk_path, start_sec, end_sec in _wav_chunks(path):
-            payload = _request_transcription(client, chunk_path)
-            part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
-            logger.info("[asr] 分片 {} 转写 {} 句（{:.0f}s–{:.0f}s）",
-                        chunk_path.name, len(part), start_sec, end_sec)
-            sentences.extend(part)
+        with _wav_chunks(path) as chunks:
+            for chunk_path, start_sec, end_sec in chunks:
+                payload = _request_transcription(client, chunk_path)
+                part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
+                logger.info("[asr] 分片 {} 转写 {} 句（{:.0f}s–{:.0f}s）",
+                            chunk_path.name, len(part), start_sec, end_sec)
+                sentences.extend(part)
     return sentences
 
 

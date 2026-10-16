@@ -92,3 +92,8 @@ temp/
 # pip 在 TEMP 目录不可写时会在当前目录创建解包临时目录（%TEMP% 权限异常时）
 pip-unpack-*/
 *.whl
+# ===== 调试 / 临时搜索脚本 =====
+_search*.py
+_search*.txt
+_search_result.txt
+nohup.out

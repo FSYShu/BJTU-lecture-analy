@@ -8,12 +8,12 @@
 |---|---|---|---|---|
 | 后端 | B1-B5 | 纯后端（CAS/编排/下载/音频/去重）| ✅ 全部已实现 | commit `ba2803d` |
 | AI | A0 | 骨架与接口契约 | ✅ 已就绪 | 重试/编排/持久化/查询 API 均已就绪 |
-| AI | A1 | 硅基流动 ASR API 调用 | ❌ 待实现 | `xfyun_asr.py:18` NotImplementedError（将改名 `siliconflow_asr.py`）|
-| AI | A2 | 硅基流动 LLM API 调用 | ❌ 待实现 | `siliconflow_llm.py:18` NotImplementedError |
-| AI | A3 | 平台字幕/知识点接入 | ❌ 待实现 | 函数已写但无调用方；元数据映射未修 |
-| AI | A4 | 校验/降级/测试 | ❌ 待实现 | tests/test_pipeline 仅有 `__init__.py` |
-| AI | A5 | 不一致项统一 | ❌ 待统一 | 模型口径/错误码/重试续跑/映射 |
-| 前端 | F1-F6 | 功能联调 | ✅ 全部已实现 | Player视频源/SeekContext联调/解析反馈/任务进度 |
+| AI | A1 | 硅基流动 ASR API 调用 | ✅ 已实现 | `siliconflow_asr.py` 415 行：分片上传/多格式解析/时间戳校验/降级估算 |
+| AI | A2 | 硅基流动 LLM API 调用 | ✅ 已实现 | `siliconflow_llm.py` 507 行：_chat/_chat_json/长文本分段/结果规范化/溯源 |
+| AI | A3 | 平台字幕/知识点接入 | ✅ 已实现 | `metadata.py` 映射已修+rpId 落库；`platform_assets` VTT/zsd/对齐；orchestrator VTT 优先 |
+| AI | A4 | 校验/降级/测试 | ⚠️ 大部分已实现 | 429/超时/缓存复用/部分降级/固定错误码已落地；40 测试中 7 失败（ASR 分片 contextmanager 误用 + LLM 分段断言） |
+| AI | A5 | 不一致项统一 | ✅ 已统一 | config 改名/固定错误码(StepError)/重试续跑/映射修正/platform_replay_id |
+| 前端 | F1-F6 | 功能联调 | ⚠️ F1/F4/F5/F6 ✅，F2 部分，F3 未实现 | F2 SeekContext.Provider 无 useContext 消费；F3 Player 不接受 children，改用 onSeekReady 回调 |
 | 前端 | U0-U6 | 设计规范 | ⚠️ U0-U5 已实现，U6 待实现 | U6 暗色模式为 P1 低优先级 |
 | 前端 | — | typecheck | ✅ 通过 | `vite-env.d.ts` 已补齐；Mindmap onSeek 已接入 |
 
@@ -83,7 +83,7 @@ useEffect(() => { getCourse(courseId).then(setCourse).catch(() => {}); }, [cours
 
 - **前置**：`api/courses.ts` 需补充 `getCourse(id)` 单条查询封装
 
-### F2：点击跳转不工作（onSeek 未传入） ✅ 已实现
+### F2：点击跳转不工作（onSeek 未传入） ⚠️ 部分实现（SeekContext.Provider 无 useContext 消费，靠 prop 传递）
 
 - **位置**：`frontend/src/pages/CourseDetail.tsx:31-36`
 - **现状**：Subtitle/Keypoints/Mindmap 组件均接受 `onSeek` prop，但 CourseDetail 未传入
@@ -101,7 +101,7 @@ const seek = useContext(SeekContext);
 <MindmapView mindmap={mindmap} onSeek={seek} />
 ```
 
-### F3：SeekContext.Provider 渲染空子节点 ✅ 已实现
+### F3：SeekContext.Provider 渲染空子节点 ❌ 未实现（Player 不接受 children，改用 onSeekReady 回调上抛）
 
 - **位置**：`frontend/src/components/Player/index.tsx:29`
 - **现状**：`<SeekContext.Provider value={seek}>{null}</SeekContext.Provider>`，子组件无法消费
@@ -934,7 +934,7 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 
 **范围边界**：P1 的 AI 能力——术语库与术语校正（FR-15/P1-01，对应 AC-06-06 见 `docs/00:311`）、字幕与导图导出（FR-11/P1-02~03）、复习题生成（FR-12/P1-04）、课内关键词检索（FR-09/P1-05）——MVP 只预留目录、不编码（`docs/08:22-46`），本节不含其实现；需求中检索定义为**关键词检索**，不引入向量/embedding。
 
-### A1：硅基流动 ASR API 调用 ❌ 待实现
+### A1：硅基流动 ASR API 调用 ✅ 已实现
 
 - **位置**：`backend/app/integrations/xfyun_asr.py:10-18`（将改名为 `siliconflow_asr.py`）
 - **现状**：`transcribe()` 仅做凭证校验后 `raise NotImplementedError`；而 `asr.run_asr` 的重试、编排层的 `asr_running(50)` 状态、`persist.py` 的入库都已就绪，**实际只需把 `transcribe` 填实**
@@ -972,7 +972,7 @@ def transcribe(audio_path: str) -> list[dict]:
 - **实现前需同步修正**：`xfyun_asr.py` 改名为 `siliconflow_asr.py`，凭证校验从 `xfyun_app_id` / `xfyun_api_key` 改为 `siliconflow_api_key`；`asr.py:3` 的 `from app.integrations import xfyun_asr` 改为 `siliconflow_asr`；`config.py` 的 `xfyun_*` 配置项改为 `siliconflow_asr_*`；`persist.py:28` 的 `source_model="xfyun-asr"` 改为 `source_model=settings.siliconflow_asr_model`。
 - **占位实现会被重试放大**：`NotImplementedError` 是 `RuntimeError` 的子类，会被 `asr.py:9` 的 `exceptions=(TimeoutError, RuntimeError)` 捕获，所以现在跑流水线会先白等一轮指数退避才失败；填实实现后不受影响。
 
-### A2：硅基流动 LLM API 调用 ❌ 待实现
+### A2：硅基流动 LLM API 调用 ✅ 已实现
 
 - **位置**：`backend/app/integrations/siliconflow_llm.py:7-36`
 - **现状**：`_SYSTEM_PROMPT`（`:7-10`）与三个业务函数的 prompt（`:22`、`:28`、`:34`）都已写好，但 `_chat`（`:13-18`）是桩，三个函数调完 `_chat` 后**丢弃返回值**、恒返回 `[]` / `{}`；`llm.run_llm`（`llm.py:12-22`）的重试与编排状态已就绪
@@ -1053,7 +1053,7 @@ def _loads(content: str) -> dict:
 
 **配置与一致性注意**：`config.py:43` 的默认模型是 `deepseek-ai/DeepSeek-V3`，而 `.env.example:54` 与 `docs/06:52` 写的是 `Qwen/Qwen3-8B`（`docs/01:25` 又写"DeepSeek/Qwen"、`docs/03:125` 以 `deepseek-v3` 作为 `source_model` 示例）。由于 `persist.py:39/49/56` 会把 `settings.siliconflow_model` 直接写进 `source_model`，**这四处口径必须先统一**，否则同一批数据的来源标识会不一致。
 
-### A3：平台字幕（VTT）与知识点（zsd）接入 ❌ 待实现
+### A3：平台字幕（VTT）与知识点（zsd）接入 ✅ 已实现
 
 - **位置**：`backend/app/integrations/platform.py:275-285`（`list_keypoints`，API 3）、`:287-294`（`get_subtitle_vtt`，API 6）——两者**已实现但全项目无调用方**；接入点在 `pipeline/steps/metadata.py`、Step 4 之前与 Step 5 之后
 - **依据**：`docs/10:947-948`（zsd 作为 LLM 重点的补充/校验来源，与 LLM 结果做时间点对齐校验，偏差 ≤ 2s；平台 VTT 可直接复用，作为 ASR 结果的补充/校验，无则走 ASR 生成）、`docs/10:977`（zsd 写入 keypoints：`timestamp_sec = zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`、`category` 按内容归类）、`docs/03:131`
@@ -1086,7 +1086,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 
 **注意**：`platform.py` 这两个函数是 `async def`，而流水线与 `transcribe` / `_chat` 都是同步的；调用方式参照 `metadata.py:15` 的 `asyncio.run(...)` 先例，不要在已有事件循环内嵌套调用。
 
-### A4：结果校验、失败降级与测试 ❌ 待实现
+### A4：结果校验、失败降级与测试 ⚠️ 大部分已实现（7 测试失败）
 
 - **位置**：`pipeline/retry.py`、`pipeline/orchestrator.py`、`pipeline/steps/persist.py`、`backend/tests/test_pipeline/`
 - **依据**：`docs/05:5-14`（外部 API 降级）、`docs/05:12`（429 按 `Retry-After`）、`docs/05:23-24`（整任务超时、并发上限）、`docs/05:49-52`（防幻觉与越界校验）、`docs/02:123`（流水线单测 mock 外部 API）、`docs/00:378-379`
@@ -1145,7 +1145,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 | 时间点必须落在有效时长内 | — | AC-03-03、AC-06-02 |
 | 全部 AI 内容带生成标识 | 100% | `docs/00:377`、`docs/05:50` |
 
-### A5：实现前需统一的不一致项（本次检验结论） ❌ 待统一
+### A5：实现前需统一的不一致项（本次检验结论） ✅ 已统一
 
 | 不一致项 | 事实 | 处理建议 |
 | --- | --- | --- |
@@ -1162,13 +1162,15 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 ## 实现优先级
 
 ```
-B1 ✅ CAS验证码 → B2 ✅ 串联编排 → B3 ✅ 视频下载 → B4 ✅ 音频提取
+B1 ✅ CAS验证码 → B2 ✅ 串联编排 → B3 ✅ 视频下载 → B4 ✅ 音频提取 → B5 ✅ 去重
                                                 ↓
-A1 硅基ASR → A2 硅基LLM → A4 校验/降级/测试 → B5 ✅ 去重 → F1-F6 ✅ 前端联调 → U0-U5 ✅ 样式完善 → U6 暗色模式(P1)
-     ↑
-A3 平台字幕/知识点接入（与 A1/A2 并行；需先修平台元数据映射）
+A1 ✅ 硅基ASR → A2 ✅ 硅基LLM → A4 ⚠️ 校验/降级/测试(7失败) → A3 ✅ 平台接入 → A5 ✅ 不一致项统一
+                                                ↓
+F1 ✅ F4 ✅ F5 ✅ F6 ✅ F2 ⚠️ F3 ❌ → U0-U5 ✅ 样式完善 → U6 暗色模式(P1)
 ```
 
-后端数据链路（B1→B4→B5）与前端联调（F1-F6、U0-U5）均已全部打通，当前阻塞点仅在 **A1/A2（AI 调用）**。
+后端 AI 链路（A1/A2/A3/A5）与数据链路（B1-B5）均已实现，A4 校验/降级/测试大部分落地。当前剩余阻塞点：
 
-AI 侧建议顺序：**A5** 不一致项先统一 → **A1**（先让 ASR 产出真实转写）→ **A2**（LLM 产出结构化结果，含 A2-1 时间戳注入）→ **A4** 的校验与部分失败降级（保证 AC-02-06 不被违反）→ **A3** 平台字幕/知识点接入（可与 A1 并行开发，但要等元数据映射修好、拿到真实 `rpId` 才能联调）。
+1. **A4 的 7 个 pipeline 测试失败**：`siliconflow_asr.py:182` 的 `_wav_chunks` 用 `@contextmanager` 装饰却以 `for ... in _wav_chunks(path)` 迭代（`_GeneratorContextManager` 不可迭代）；`test_llm` 分段断言与实现行为不一致。需修 ASR 分片调用方式 + 校准 LLM 分段测试。
+2. **F2/F3 前端 SeekContext 架构偏差**：Player 不接受 children、不自包裹 Provider，改用 `onSeekReady` 回调上抛到 CourseDetail；SeekContext.Provider 存在但全项目无 `useContext(SeekContext)` 消费，实际靠 prop 传递。功能可用但与设计意图不符。
+3. **U6 暗色模式**：P1 低优先级，暂不实现。

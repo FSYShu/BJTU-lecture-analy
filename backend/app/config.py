@@ -2,6 +2,7 @@
 
 对应 docs/06-env-vars.md 全部环境变量。禁止硬编码密钥。
 """
+import secrets
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./storage/db/app.db"
 
-    secret_key: str = "change-me-to-a-strong-random-secret"
+    secret_key: str = secrets.token_urlsafe(32)
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 480
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

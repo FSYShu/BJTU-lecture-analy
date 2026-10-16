@@ -39,5 +39,6 @@ def start_parse(course_id: int, bg: BackgroundTasks, user: User = Depends(get_cu
         raise HTTPException(404, "课程不存在")
     task_service.ensure_parse_ready(course)
     task = task_service.create_task(db, course_id, user.id)
-    bg.add_task(parse_worker_run, task.id)
+    import threading
+    threading.Thread(target=parse_worker_run, args=(task.id,), daemon=True).start()
     return task

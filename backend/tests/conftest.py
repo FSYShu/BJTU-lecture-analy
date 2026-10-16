@@ -5,29 +5,50 @@ FastAPI 相关依赖在 ``client`` 夹具内部延迟导入：流水线单测
 """
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.models import *  # noqa: F401,F403
 
 
 @pytest.fixture()
-def client():
+def engine():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture()
+def db(engine) -> Session:
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture()
+def client(engine):
     from fastapi.testclient import TestClient
 
     from app.db.session import get_db
     from app.main import app
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
     def override_get_db():
-        db = TestingSessionLocal()
+        session = TestingSessionLocal()
         try:
-            yield db
+            yield session
         finally:
-            db.close()
+            session.close()
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
