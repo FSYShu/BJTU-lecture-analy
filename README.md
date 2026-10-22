@@ -22,12 +22,14 @@
 
 ```
 BJTU-lecture-analy/
-├── docs/          # 参考文档（需求/PPT/架构/数据模型/数据流/P0-P1）
-├── backend/       # FastAPI 后端（pyproject.toml + uv 锁定）
-├── frontend/      # React 前端（package-lock.json 锁定）
-├── storage/       # 运行时数据（db/videos/audios/logs/exports，已 gitignore）
-├── .env.example   # 环境变量模板
-├── docker-compose.yml
+├── docs/               # 参考文档（需求/PPT/架构/数据模型/数据流/P0-P1）
+├── backend/            # FastAPI 后端（pyproject.toml + uv 锁定）
+├── frontend/           # React 前端（package-lock.json 锁定）
+├── scripts/            # 部署与运行脚本（deploy.sh / run.ps1）
+├── .github/workflows/  # CI/CD 流水线（push main 自动测试+部署）
+├── storage/            # 运行时数据（db/videos/audios/logs/exports，已 gitignore）
+├── .env.example        # 环境变量模板
+├── docker-compose.yml  # 生产容器编排
 └── README.md
 ```
 
@@ -35,14 +37,25 @@ BJTU-lecture-analy/
 
 ## 快速启动
 
-### 1. 准备环境变量
+### Windows 一键启动（推荐）
+
+```powershell
+powershell scripts/run.ps1              # 环境初始化 + 启动前后端（本地直跑，无需 Docker）
+powershell scripts/run.ps1 -SkipSetup   # 跳过初始化，直接启动
+```
+
+脚本自动完成：检查 Python/uv/Node/ffmpeg → 安装依赖 → 配置 `.env` + API Key → 后台启动前后端 → 实时分类展示日志。按 `Ctrl+C` 停止所有服务。
+
+### 手动启动
+
+#### 1. 准备环境变量
 
 ```bash
 cp .env.example .env
 # 编辑 .env，填入硅基流动 API 凭证
 ```
 
-### 2. 后端（Python + uv）
+#### 2. 后端（Python + uv）
 
 ```bash
 cd backend
@@ -56,7 +69,7 @@ uv run python run.py              # 启动后端（单进程 + ProactorEventLoop
 
 API 文档：http://localhost:8000/docs
 
-### 3. 前端（React + Vite）
+#### 3. 前端（React + Vite）
 
 ```bash
 cd frontend
@@ -68,9 +81,9 @@ npm run dev
 
 ### 登录
 
-- **默认入口**：打开前端即跳转 `/cas-login`（北交大统一身份认证）。输入学号/教工号 + 密码，页面自动加载 CAS 验证码图（可点击刷新），填入验证码后登录。
-- **管理员入口**：`/cas-login` 页面右上角"管理员登录"链接 → `/login`（本系统账号密码登录）。
-- CAS 登录成功后，后端按北交大学号自动创建本系统用户（role=teacher）并签发 JWT。
+- **主入口**：打开前端即跳转 SSO 统一身份认证（无验证码、SM2 加密）。输入学号/教工号 + 密码完成登录。
+- **管理员入口**：登录页右上角"管理员登录"链接 → `/login`（本系统账号密码登录）。
+- 登录成功后，后端按北交大学号自动创建本系统用户（role=teacher）并签发 JWT。
 
 ### 4. 一键容器化（可选，保证多电脑环境一致）
 
@@ -119,6 +132,34 @@ P1（术语库、导出、检索、笔记、复习题、移动端、反馈入口
 
 ## 部署说明
 
+### 本地开发
+
+```powershell
+powershell scripts/run.ps1              # Windows 一键启动（无需 Docker）
+```
+
+### 服务器部署（Docker + CI/CD）
+
+**CI/CD 流水线**（`.github/workflows/deploy.yml`）：
+- push 到 `main` → GitHub 云端跑测试（ruff/mypy/pytest + tsc/eslint/build）→ 服务器 self-hosted runner 自动部署
+- PR 到 `main` → 仅跑测试，不部署
+
+**服务器初始化**（Ubuntu）：
+```bash
+sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable docker
+git clone <仓库> ~/bjtu-la && cd ~/bjtu-la
+# 放置 .env，配置镜像加速器
+bash scripts/deploy.sh          # 首次部署
+```
+
+**日常更新**：`git push origin main` 即自动触发部署。
+
+**Windows 本地 Docker 部署**：
+```powershell
+powershell scripts/run.ps1 -Docker    # Docker 模式（需 Docker Desktop）
+```
+
 ### 网络环境要求
 
 - **校外部署需 VPN**：北交大使用 **MotionPro**（Array Networks SSL VPN）。
@@ -130,7 +171,8 @@ P1（术语库、导出、检索、笔记、复习题、移动端、反馈入口
 - 视频/音频缓存位于 `storage/videos`、`storage/audios`，按 `CACHE_RETENTION_DAYS` 自动清理，任务完成可选立即删除中间音频（`CLEANUP_AUDIO_AFTER_TASK`）。
 - 日志独立目录 `storage/logs/`。
 - 生产环境务必替换 `SECRET_KEY` 为强随机值，关闭 `--reload`。
-- 容器化部署见 `docker-compose.yml`。
+- 容器化部署见 `docker-compose.yml`，日志轮转已配置（每容器 3×10MB）。
+- CI/CD 部署脚本 `scripts/deploy.sh`（Linux）/ `scripts/run.ps1`（Windows）：备份 SQLite → 构建/安装 → 健康检查 → 失败回滚提示。
 
 ## 文档索引
 
