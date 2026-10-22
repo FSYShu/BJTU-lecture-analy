@@ -16,8 +16,11 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("[app] 启动 {} (env={})", settings.app_name, settings.app_env)
 
+    from app.db.init_db import init_db
     from app.db.models import ParseTask
     from app.db.session import SessionLocal
+
+    init_db()
 
     db = SessionLocal()
     active_statuses = ["queued", "downloading", "extracting_audio", "asr_running", "llm_running", "persisting"]
