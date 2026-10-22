@@ -22,6 +22,17 @@ class CaptchaSubmitOut(BaseModel):
     user: UserOut
 
 
+class SsoLoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class SsoLoginOut(BaseModel):
+    user_id: int
+    access_token: str
+    user: UserOut
+
+
 class SyncCoursesOut(BaseModel):
     synced: int
     total: int

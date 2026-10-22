@@ -8,7 +8,7 @@ client.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (!token) {
     const url = config.url || '';
-    if (url.includes('/captcha') || url.includes('/cas-login') || url.includes('/admin-login') || url.includes('/login')) {
+    if (url.includes('/captcha') || url.includes('/sso-login') || url.includes('/cas-login') || url.includes('/admin-login') || url.includes('/login')) {
       return config;
     }
     window.location.href = '/cas-login';
