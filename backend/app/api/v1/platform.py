@@ -1,8 +1,10 @@
-"""课程平台对接端点（CAS 验证码两步流程）。P0。
+"""课程平台对接端点（SSO 统一身份认证登录）。P0。
 
-CAS 登录是系统主入口（无需预先持有本系统 Token）：init 打开 CAS 页截图验证码，
-submit 完成登录后按北交大学号 upsert 本系统用户并签发 JWT，前端据此进入系统。
-课程同步由 /sync-courses 单独完成，登录时只做 CAS 认证 + 签发 JWT，快速返回。
+SSO 登录是系统主入口（无需预先持有本系统 Token）：/sso-login 访问 mis 重定向
+到 SSO 统一身份认证页，通过页面 doLogin() 完成 SM2 加密并提交表单（无验证码），
+登录成功后按北交大学号 upsert 本系统用户并签发 JWT，前端据此进入系统。
+课程同步由 /sync-courses 单独完成，登录时只做 SSO 认证 + 签发 JWT，快速返回。
+原 CAS 验证码两步流程代码保留（见下方注释段），前端主入口已切换为 SSO。
 """
 import json
 import secrets as _secrets
@@ -23,6 +25,8 @@ from app.schemas.platform import (
     CaptchaSubmitOut,
     ReplayOut,
     ReplayStreamOut,
+    SsoLoginIn,
+    SsoLoginOut,
     SyncCoursesOut,
 )
 from app.schemas.task import TaskOut
@@ -64,25 +68,66 @@ def _normalize_cookies(raw: list | dict) -> list[dict]:
     ]
 
 
-@router.post("/captcha/init", response_model=CaptchaInitOut)
-async def captcha_init() -> CaptchaInitOut:
-    """打开 CAS 登录页并截图验证码，返回 base64 图片 + session_key。"""
-    image_b64, session_key = await platform.init_cas_captcha()
-    return CaptchaInitOut(captcha_image_base64=image_b64, session_key=session_key)
+# ---------- CAS 验证码两步流程入口（已弃用，保留代码；前端主入口已切换为 SSO /sso-login）----------
+# @router.post("/captcha/init", response_model=CaptchaInitOut)
+# async def captcha_init() -> CaptchaInitOut:
+#     """打开 CAS 登录页并截图验证码，返回 base64 图片 + session_key。"""
+#     image_b64, session_key = await platform.init_cas_captcha()
+#     return CaptchaInitOut(captcha_image_base64=image_b64, session_key=session_key)
+#
+#
+# @router.post("/captcha/submit", response_model=CaptchaSubmitOut)
+# async def captcha_submit(
+#     body: CaptchaSubmitIn, db: Session = Depends(get_db)
+# ) -> CaptchaSubmitOut:
+#     """填入账号密码与验证码完成 CAS 登录，返回 user_id + 本系统访问令牌。
+#
+#     仅完成 CAS 认证 + 持久化 cookies + 签发 JWT，不加载课程。
+#     前端拿到 JWT 后进入主页，由 /sync-courses 异步加载课程。
+#     """
+#     cookies, platform_user_id = await platform.submit_cas_captcha(
+#         body.session_key, body.username, body.password, body.captcha_code
+#     )
+#
+#     username = str(platform_user_id)
+#     user = db.query(User).filter(User.username == username).first()
+#     if user is None:
+#         user = User(
+#             username=username,
+#             hashed_password=hash_password(_secrets.token_urlsafe(32)),
+#             role="teacher",
+#             display_name=f"北交大 {platform_user_id}",
+#             is_active=True,
+#         )
+#         db.add(user)
+#         db.commit()
+#         db.refresh(user)
+#
+#     user.platform_user_id = platform_user_id
+#     user.platform_cookies = json.dumps(cookies, ensure_ascii=False)
+#     user.cookies_updated_at = datetime.now(timezone.utc)
+#     db.commit()
+#     db.refresh(user)
+#
+#     token = create_access_token(user.id, {"role": user.role})
+#     return CaptchaSubmitOut(
+#         user_id=platform_user_id,
+#         access_token=token,
+#         user=UserOut.model_validate(user),
+#     )
 
 
-@router.post("/captcha/submit", response_model=CaptchaSubmitOut)
-async def captcha_submit(
-    body: CaptchaSubmitIn, db: Session = Depends(get_db)
-) -> CaptchaSubmitOut:
-    """填入账号密码与验证码完成 CAS 登录，返回 user_id + 本系统访问令牌。
+@router.post("/sso-login", response_model=SsoLoginOut)
+async def sso_login(
+    body: SsoLoginIn, db: Session = Depends(get_db)
+) -> SsoLoginOut:
+    """SSO 统一身份认证登录（无验证码），返回 user_id + 本系统访问令牌。
 
-    仅完成 CAS 认证 + 持久化 cookies + 签发 JWT，不加载课程。
-    前端拿到 JWT 后进入主页，由 /sync-courses 异步加载课程。
+    访问 mis.bjtu.edu.cn 重定向到 SSO 登录页，通过页面 doLogin() 完成
+    SM2 加密并提交表单。登录成功后按北交大学号 upsert 本系统用户、
+    持久化 cookies 并签发 JWT。课程同步由 /sync-courses 单独完成。
     """
-    cookies, platform_user_id = await platform.submit_cas_captcha(
-        body.session_key, body.username, body.password, body.captcha_code
-    )
+    cookies, platform_user_id = await platform.sso_login(body.username, body.password)
 
     username = str(platform_user_id)
     user = db.query(User).filter(User.username == username).first()
@@ -105,7 +150,7 @@ async def captcha_submit(
     db.refresh(user)
 
     token = create_access_token(user.id, {"role": user.role})
-    return CaptchaSubmitOut(
+    return SsoLoginOut(
         user_id=platform_user_id,
         access_token=token,
         user=UserOut.model_validate(user),

@@ -238,6 +238,87 @@ async def cas_login(
             await browser.close()
 
 
+async def sso_login(username: str, password: str) -> tuple[list[dict], int]:
+    """SSO 统一身份认证登录（无验证码），返回 (完整 Cookie 对象列表, user_id)。
+
+    访问 mis.bjtu.edu.cn 自动重定向到 sso.bjtu.edu.cn 登录页，
+    通过页面内置 doLogin() 函数完成 SM2 加密并提交表单，
+    登录成功后重定向回 mis.bjtu.edu.cn，导出 cookies。
+    user_id 直接取用户输入的学号/教工号。
+    """
+    from loguru import logger
+
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as exc:
+        raise RuntimeError("未安装 Playwright，请执行 uv add playwright && uv run playwright install chromium") from exc
+
+    if not username or not password:
+        raise RuntimeError("SSO 用户名/密码未提供")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+        )
+        try:
+            page = await browser.new_page()
+            logger.info("[platform] SSO 登录：访问 {}", settings.platform_cas_login_url)
+            await page.goto(settings.platform_cas_login_url, wait_until="domcontentloaded", timeout=30000)
+            logger.info("[platform] SSO 登录：已跳转到 {}", page.url)
+
+            await page.wait_for_function("typeof doLogin === 'function'", timeout=10000)
+
+            await page.evaluate(
+                """(args) => doLogin({
+                    username: args[0],
+                    password: args[1],
+                    type: 'username_password'
+                })""",
+                [username, password],
+            )
+            logger.info("[platform] SSO 登录：已调用 doLogin 提交表单")
+
+            try:
+                await page.wait_for_function(
+                    "() => window.location.hostname === 'mis.bjtu.edu.cn'",
+                    timeout=15000,
+                )
+                logger.info("[platform] SSO 登录成功，当前 URL: {}", page.url)
+            except Exception:
+                from app.core.exceptions import AppError
+
+                error_text = await page.evaluate(
+                    """() => {
+                        if (typeof error !== 'undefined' && error) return String(error);
+                        const body = document.body.innerText || '';
+                        const patterns = [
+                            /密码[^\\n]{0,20}错误/,
+                            /用户名[^\\n]{0,20}错误/,
+                            /账号[^\\n]{0,20}错误/,
+                            /登录失败[^\\n]{0,20}/,
+                            /错误[^\\n]{0,30}/,
+                        ];
+                        for (const p of patterns) {
+                            const m = body.match(p);
+                            if (m) return m[0];
+                        }
+                        return '';
+                    }"""
+                )
+                raise AppError(
+                    code="SSO_LOGIN_FAILED",
+                    message=error_text or "登录失败，请检查账号密码",
+                    status_code=400,
+                )
+
+            user_id = int(username)
+            cookies = await page.context.cookies()
+            return cookies, user_id
+        finally:
+            await browser.close()
+
+
 async def sync_courses_from_ve(cookies: list[dict]) -> tuple[list[dict], list[dict], int | None]:
     """用已存的 cookies 重新打开浏览器，导航到 VE 课程平台并提取课程列表。
 
