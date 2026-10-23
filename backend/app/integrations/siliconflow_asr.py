@@ -138,17 +138,33 @@ def _is_wave(path: Path) -> bool:
 def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
     """按分片并行转写并拼接全局时间轴。
 
-    用 ThreadPoolExecutor 并发上传多个分片，大幅缩短 ASR 总耗时。
-    所有分片先落盘到临时目录，再并行处理，最后按序号合并结果。
+    生产者-消费者模式：逐片切割 WAV，切好即提交上传，无需等待全部分片落盘。
+    有界队列实现背压，限制内存中待处理分片数，减少磁盘 IO 等待。
     """
     import concurrent.futures
+    import queue
+    import threading
 
     tmpdir = Path(tempfile.mkdtemp(prefix="sf_asr_"))
     try:
-        chunks = _create_all_chunks(path, tmpdir)
-        total = len(chunks)
+        total = _count_chunks(path)
         workers = min(max(1, settings.siliconflow_asr_workers), total)
-        logger.info("[asr] 共 {} 个分片，{} 并发转写", total, workers)
+        logger.info("[asr] 共 {} 个分片，{} 并发转写（流式）", total, workers)
+
+        chunk_queue: queue.Queue = queue.Queue(maxsize=workers + 2)
+        producer_error: list[BaseException] = []
+
+        def _producer() -> None:
+            try:
+                for item in _iter_chunks(path, tmpdir):
+                    chunk_queue.put(item)
+            except BaseException as exc:  # noqa: BLE001
+                producer_error.append(exc)
+            finally:
+                chunk_queue.put(None)
+
+        producer_thread = threading.Thread(target=_producer, daemon=True)
+        producer_thread.start()
 
         results: dict[int, list[dict]] = {}
         completed = 0
@@ -159,13 +175,19 @@ def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
                 part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
                 logger.info("[asr] 分片 {}/{} 转写 {} 句（{:.0f}s–{:.0f}s）",
                             idx + 1, total, len(part), start_sec, end_sec)
+                chunk_path.unlink(missing_ok=True)
                 return idx, part
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_do_transcribe, i, cp, s, e): i
-                for i, (cp, s, e) in enumerate(chunks)
-            }
+            futures: dict[concurrent.futures.Future, int] = {}
+            while True:
+                item = chunk_queue.get()
+                if item is None:
+                    break
+                idx, chunk_path, start_sec, end_sec = item
+                future = executor.submit(_do_transcribe, idx, chunk_path, start_sec, end_sec)
+                futures[future] = idx
+
             for future in concurrent.futures.as_completed(futures):
                 idx = futures[future]
                 try:
@@ -178,6 +200,10 @@ def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
                 if progress_callback:
                     progress_callback(completed, total, f"ASR {completed}/{total}")
 
+        producer_thread.join()
+        if producer_error:
+            raise producer_error[0]
+
         sentences: list[dict] = []
         for idx in sorted(results.keys()):
             sentences.extend(results[idx])
@@ -187,11 +213,28 @@ def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
     return sentences
 
 
-def _create_all_chunks(audio_path: Path, tmpdir: Path) -> list[tuple[Path, float, float]]:
-    """把 WAV 切成若干分片并落盘到 tmpdir，返回 [(分片文件, 起始秒, 结束秒), ...]。"""
+def _count_chunks(audio_path: Path) -> int:
+    """读取 WAV 头部计算总分片数，供进度上报使用。"""
     max_seconds = max(1, settings.siliconflow_asr_chunk_seconds)
     max_bytes = max(1, settings.siliconflow_asr_chunk_max_mb) * 1024 * 1024
-    chunks: list[tuple[Path, float, float]] = []
+
+    with wave.open(str(audio_path), "rb") as w:
+        rate = w.getframerate()
+        channels = w.getnchannels()
+        width = w.getsampwidth()
+        nframes = w.getnframes()
+
+    frame_bytes = max(1, channels * width)
+    by_time = int(max_seconds * rate)
+    by_size = int(max_bytes // frame_bytes)
+    frames_per_chunk = max(1, min(by_time, by_size))
+    return max(1, (nframes + frames_per_chunk - 1) // frames_per_chunk)
+
+
+def _iter_chunks(audio_path: Path, tmpdir: Path):
+    """逐片切割 WAV 并落盘，yield (idx, chunk_path, start_sec, end_sec)。"""
+    max_seconds = max(1, settings.siliconflow_asr_chunk_seconds)
+    max_bytes = max(1, settings.siliconflow_asr_chunk_max_mb) * 1024 * 1024
 
     with wave.open(str(audio_path), "rb") as w:
         rate = w.getframerate()
@@ -217,10 +260,8 @@ def _create_all_chunks(audio_path: Path, tmpdir: Path) -> list[tuple[Path, float
                 out.setsampwidth(width)
                 out.setframerate(rate)
                 out.writeframes(frames)
-            chunks.append((chunk_path, start_sec, end_sec))
+            yield index, chunk_path, start_sec, end_sec
             index += 1
-
-    return chunks
 
 
 def _transcribe_single(path: Path, offset: float, chunk_end: float) -> list[dict]:
