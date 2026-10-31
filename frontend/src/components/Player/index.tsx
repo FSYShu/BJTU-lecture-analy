@@ -13,10 +13,18 @@ interface PlayerProps {
 export default function Player({ src, onTimeUpdate, onSeekReady }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<any>(null);
+  const pendingSeekRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 元数据没就绪时 currentTime() 会失效：先记下来，等 loadedmetadata 再跳。
   const seek = useCallback((t: number) => {
-    playerRef.current?.currentTime(t);
+    if (!Number.isFinite(t) || t < 0) return;
+    const player = playerRef.current;
+    if (!player || player.readyState() === 0) {
+      pendingSeekRef.current = t;
+      return;
+    }
+    player.currentTime(t);
   }, []);
 
   useEffect(() => {
@@ -26,6 +34,7 @@ export default function Player({ src, onTimeUpdate, onSeekReady }: PlayerProps) 
       playerRef.current.dispose();
       playerRef.current = null;
     }
+    pendingSeekRef.current = null;
 
     if (!src) return;
 
@@ -40,6 +49,13 @@ export default function Player({ src, onTimeUpdate, onSeekReady }: PlayerProps) 
         }],
       });
       playerRef.current.on('timeupdate', () => onTimeUpdate?.(playerRef.current.currentTime()));
+      playerRef.current.on('loadedmetadata', () => {
+        const pending = pendingSeekRef.current;
+        if (pending === null) return;
+        pendingSeekRef.current = null;
+        const duration = playerRef.current?.duration?.() ?? 0;
+        playerRef.current?.currentTime(duration > 0 ? Math.min(pending, duration) : pending);
+      });
       playerRef.current.on('error', () => {
         const code = playerRef.current?.error()?.code;
         setError(`视频加载失败 (错误码 ${code})，可能需要先在浏览器中打开视频地址信任证书`);
