@@ -1,8 +1,9 @@
-"""FastAPI 应用入口。挂载路由、CORS、异常处理、日志初始化。"""
+"""FastAPI 应用入口。挂载路由、CORS、压缩、异常处理、日志初始化。"""
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from loguru import logger
 
 from app.api.v1.router import api_router
@@ -54,6 +55,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# >1KB 的 JSON 响应才压缩：转写 300KB → ~60KB，重点/总结/导图同样受益；
+# 小于 1KB 的响应压缩收益抵不过 CPU 开销。Starlette 的 GZipMiddleware 本身已
+# 排除 text/event-stream（DEFAULT_EXCLUDED_CONTENT_TYPES），后续新增 SSE 端点
+# （docs/11 优化 4）不会被缓冲卡住。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 register_exception_handlers(app)
 
