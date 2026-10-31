@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Player, { SeekContext } from '@/components/Player';
 import Subtitle from '@/components/Subtitle';
@@ -7,9 +7,10 @@ import SummaryView from '@/components/Summary';
 import MindmapView from '@/components/Mindmap';
 import ProgressStepper from '@/components/ProgressStepper';
 import { getCourse, fetchReplays, parseReplay, fetchReplayStream } from '@/api/courses';
-import { listTranscripts, listKeypoints, getSummary, getMindmap, getTask, getLatestTask } from '@/api';
+import { getLectureOverview, listTranscripts } from '@/api';
+import { useTaskWatcher } from '@/hooks/useTask';
 import { toast } from '@/store/toast';
-import type { Course, Replay, Transcript, Keypoint, Summary, Mindmap, Task } from '@/types';
+import type { Course, Replay, Transcript, Keypoint, Summary, Mindmap, Task, LectureOverview } from '@/types';
 
 const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'extracting_audio', 'asr_running', 'llm_running', 'persisting']);
 
@@ -35,51 +36,55 @@ export default function CourseDetail() {
   const [taskStartTime, setTaskStartTime] = useState<number | null>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refreshAll = useCallback((lectureId: number) => {
-    listTranscripts(lectureId).then(setTranscripts).catch(() => {});
-    listKeypoints(lectureId).then(setKeypoints).catch(() => {});
-    getSummary(lectureId).then(setSummary).catch(() => {});
-    getMindmap(lectureId).then(setMindmap).catch(() => {});
+  // 任务订阅：当前在看哪个课次、订阅哪个任务
+  const [activeLectureId, setActiveLectureId] = useState<number | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
+  const lastStepRef = useRef<string | null>(null);
+
+  /** 首屏聚合：1 次 overview + 1 次转写（docs/11 流量优化 F4）。 */
+  const refreshAll = useCallback(async (lectureId: number): Promise<LectureOverview | null> => {
+    try {
+      const [overview, transcriptList] = await Promise.all([
+        getLectureOverview(lectureId),
+        listTranscripts(lectureId),
+      ]);
+      setKeypoints(overview.keypoints);
+      setSummary(overview.summary);
+      setMindmap(overview.mindmap);
+      setTranscripts(transcriptList);
+      return overview;
+    } catch {
+      return null;
+    }
   }, []);
 
+  /** 解析进行中只想尽快看到新产生的转写，不动其它面板。 */
   const refreshBasic = useCallback((lectureId: number) => {
     listTranscripts(lectureId).then(setTranscripts).catch(() => {});
   }, []);
 
-  const startPolling = useCallback((taskId: number, lectureId: number | null) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    setTaskStartTime(Date.now());
-    setLastUpdateTime(Date.now());
-    pollRef.current = setInterval(async () => {
-      try {
-        const t = await getTask(taskId);
-        setTask(t);
-        setLastUpdateTime(Date.now());
-        if (t.status === 'succeeded') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          setParsingId(null);
-          setTaskStartTime(null);
-          if (lectureId) refreshAll(lectureId);
-        } else if (t.status === 'failed') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          setParsingId(null);
-          setTaskStartTime(null);
-          toast.error(t.error_message || '解析失败');
-        } else {
-          if (lectureId) refreshBasic(lectureId);
-        }
-      } catch {
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = null;
-        setParsingId(null);
-        setTaskStartTime(null);
+  useTaskWatcher(activeTaskId, {
+    onTask: (t) => {
+      setTask(t);
+      setLastUpdateTime(Date.now());
+      // 换步骤时才刷一次转写，避免 SSE 每帧都打接口
+      if (t.current_step !== lastStepRef.current) {
+        lastStepRef.current = t.current_step ?? null;
+        if (activeLectureId) refreshBasic(activeLectureId);
       }
-    }, 3000);
-  }, [refreshAll, refreshBasic]);
+    },
+    onTerminal: (t) => {
+      setParsingId(null);
+      setTaskStartTime(null);
+      setActiveTaskId(null);
+      if (t.status === 'succeeded') {
+        if (activeLectureId) refreshAll(activeLectureId);
+      } else {
+        toast.error(t.error_message || '解析失败');
+      }
+    },
+  });
 
   useEffect(() => {
     if (taskStartTime) {
@@ -87,6 +92,22 @@ export default function CourseDetail() {
       return () => clearInterval(timer);
     }
   }, [taskStartTime]);
+
+  /** 订阅任务：非终态才订阅，终态直接展示。 */
+  const watchTask = useCallback((latest: Task | null) => {
+    if (latest && ACTIVE_STATUSES.has(latest.status)) {
+      setTask(latest);
+      setParsingId(-1);
+      setTaskStartTime(Date.now());
+      setLastUpdateTime(Date.now());
+      lastStepRef.current = latest.current_step ?? null;
+      setActiveTaskId(latest.id);
+    } else {
+      setTask(latest);
+      setParsingId(null);
+      setTaskStartTime(null);
+    }
+  }, []);
 
   // 进入详情：加载课程 + 回放列表，自动选中第一个回放并加载播放器与对应 AI 解析
   useEffect(() => {
@@ -110,25 +131,18 @@ export default function CourseDetail() {
           }
           const lid = first.lecture_id;
           if (lid) {
-            refreshAll(lid);
-            getLatestTask(lid)
-              .then((t) => {
-                if (t && ACTIVE_STATUSES.has(t.status)) {
-                  setTask(t);
-                  setParsingId(-1);
-                  startPolling(t.id, lid);
-                }
-              })
-              .catch(() => {});
+            setActiveLectureId(lid);
+            const overview = await refreshAll(lid);
+            watchTask(overview?.task ?? null);
           }
         }
       })
       .catch(() => {});
 
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      setActiveTaskId(null);
     };
-  }, [courseId, refreshAll, startPolling]);
+  }, [courseId, refreshAll, watchTask]);
 
   // 点击回放项：加载视频 + 对应 AI 解析
   const handleSelectReplay = async (r: Replay) => {
@@ -153,22 +167,9 @@ export default function CourseDetail() {
       setLoadingStream(null);
     }
     if (lid) {
-      refreshAll(lid);
-      getLatestTask(lid)
-        .then((t) => {
-          if (t && ACTIVE_STATUSES.has(t.status)) {
-            setTask(t);
-            setParsingId(-1);
-            startPolling(t.id, lid);
-          } else {
-            setTask(null);
-            setParsingId(null);
-          }
-        })
-        .catch(() => {
-          setTask(null);
-          setParsingId(null);
-        });
+      setActiveLectureId(lid);
+      const overview = await refreshAll(lid);
+      watchTask(overview?.task ?? null);
     } else {
       setTranscripts([]);
       setKeypoints([]);
@@ -176,6 +177,8 @@ export default function CourseDetail() {
       setMindmap(null);
       setTask(null);
       setParsingId(null);
+      setActiveLectureId(null);
+      setActiveTaskId(null);
     }
   };
 
@@ -186,8 +189,12 @@ export default function CourseDetail() {
     try {
       const res: Task = await parseReplay(courseId, r.id);
       toast.success('已开始解析');
+      if (r.lecture_id) setActiveLectureId(r.lecture_id);
       setTask(res);
-      startPolling(res.id, r.lecture_id ?? null);
+      setTaskStartTime(Date.now());
+      setLastUpdateTime(Date.now());
+      lastStepRef.current = res.current_step ?? null;
+      setActiveTaskId(res.id);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || '发起解析失败';
       toast.error(typeof msg === 'string' ? msg : '发起解析失败');
@@ -268,7 +275,9 @@ export default function CourseDetail() {
                 </div>
               </div>
             )}
-            {keypoints.length > 0 && <Keypoints keypoints={keypoints} onSeek={seek} />}
+            {keypoints.length > 0 && (
+              <Keypoints keypoints={keypoints} currentSec={currentSec} onSeek={seek} />
+            )}
             {mindmap && <MindmapView mindmap={mindmap} onSeek={seek} />}
           </div>
         </div>
