@@ -35,6 +35,10 @@ async def lifespan(app: FastAPI):
     db.close()
 
     yield
+    # 关闭复用的硅基流动 HTTP 连接池（LLM / ASR 共享），避免进程退出时留下未释放连接
+    from app.integrations import http_pool
+
+    http_pool.close()
     logger.info("[app] 关闭 {}", settings.app_name)
 
 
