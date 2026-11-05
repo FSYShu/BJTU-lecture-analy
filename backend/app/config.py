@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     siliconflow_max_retry: int = 3
     # 单次投喂的最大转写字符数，超出后按时间窗口分段做 map-reduce（docs/00:129）
     siliconflow_max_input_chars: int = 12000
+    # 并发：三个子任务并行度 / 单个子任务内分段 map 并行度 / 全局在飞请求上限
+    # （任务并行 × 分段并行会放大在飞请求数，max_concurrency 是最终闸门，防止打满对端限流）
+    siliconflow_llm_task_workers: int = 3
+    siliconflow_llm_workers: int = 3
+    siliconflow_llm_max_concurrency: int = 6
+    # 硅基流动 HTTP 连接池（LLM 与 ASR 共用，keep-alive 连接复用，省掉重复 TCP/TLS 握手）
+    siliconflow_http_max_connections: int = 20
+    siliconflow_http_max_keepalive: int = 10
+    siliconflow_http_keepalive_expiry: float = 30.0
 
     platform_base_url: str = ""
     platform_video_formats: str = "mp4,flv,hls"

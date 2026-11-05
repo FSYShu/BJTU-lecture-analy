@@ -1053,6 +1053,17 @@ def _loads(content: str) -> dict:
 
 **配置与一致性注意**：`config.py:43` 的默认模型是 `deepseek-ai/DeepSeek-V3`，而 `.env.example:54` 与 `docs/06:52` 写的是 `Qwen/Qwen3-8B`（`docs/01:25` 又写"DeepSeek/Qwen"、`docs/03:125` 以 `deepseek-v3` 作为 `source_model` 示例）。由于 `persist.py:39/49/56` 会把 `settings.siliconflow_model` 直接写进 `source_model`，**这四处口径必须先统一**，否则同一批数据的来源标识会不一致。
 
+**A2-6 并发、连接复用与提示词优化（P0 性能项）**
+
+| 优化项 | 落地位置 | 做法 |
+| --- | --- | --- |
+| LLM 三子任务并行化 | `pipeline/steps/llm.py::run_llm` | 重点/总结/导图三者互不依赖，用 `ThreadPoolExecutor` 并发发起（`SILICONFLOW_LLM_TASK_WORKERS`，默认 3）；总耗时从「三项之和」降到「最慢一项」。单项失败仍只降级该项，失败说明按固定顺序输出 |
+| LLM 分段 map 并行化 | `integrations/siliconflow_llm.py` | 长转写的 map 阶段用 `core/concurrency.py::map_ordered` 并发调用（`SILICONFLOW_LLM_WORKERS`，默认 3）；结果按下标回填后按块序号合并，章节顺序与要点顺序不受完成先后影响 |
+| httpx 客户端复用 | `integrations/http_pool.py` | 进程内单例 `httpx.Client`（连接池 + keep-alive），LLM 与 ASR 共用；超时按请求传入，应用退出时由 `lifespan` 调 `http_pool.close()` 释放 |
+| 提示词优化 | `integrations/siliconflow_llm.py` | 系统提示统一「角色 + 输入格式约定 + 6 条硬约束」；各任务提示补齐判定标准、字段规则、粒度上限与 1 个少样本示例；分段提示显式声明「行首秒数是整节课绝对时间，直接复制」 |
+
+**并发上限**：两个并行度相乘会把在飞请求放大到 9 以上，`_REQUEST_SLOTS`（`SILICONFLOW_LLM_MAX_CONCURRENCY`，默认 6）在 `_chat` 统一限流——超限时排队而不是报错，避免瞬时 429 触发重试反而更慢。
+
 ### A3：平台字幕（VTT）与知识点（zsd）接入 ✅ 已实现
 
 - **位置**：`backend/app/integrations/platform.py:275-285`（`list_keypoints`，API 3）、`:287-294`（`get_subtitle_vtt`，API 6）——两者**已实现但全项目无调用方**；接入点在 `pipeline/steps/metadata.py`、Step 4 之前与 Step 5 之后

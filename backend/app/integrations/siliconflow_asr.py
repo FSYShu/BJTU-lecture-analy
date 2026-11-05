@@ -4,6 +4,8 @@
 
 设计要点：
 - 与 LLM 共用 ``SILICONFLOW_API_KEY`` / ``SILICONFLOW_BASE_URL``，Bearer Token 鉴权；
+- 与 LLM 共用同一个 httpx 连接池（``app/integrations/http_pool.py``），分片并行上传时复用
+  keep-alive 连接，省掉每片一次的 TCP/TLS 握手；
 - 长回放音频（60–120 分钟）远超单次上传限制，按 ``SILICONFLOW_ASR_CHUNK_SECONDS`` /
   ``SILICONFLOW_ASR_CHUNK_MAX_MB`` 切成 16kHz 单声道 WAV 分片，逐片转写后加上分片起始偏移，
   拼回全局时间轴；
@@ -26,6 +28,7 @@ import httpx
 from loguru import logger
 
 from app.config import settings
+from app.integrations import http_pool
 
 _TRANSCRIPTIONS_PATH = "/audio/transcriptions"
 
@@ -120,7 +123,14 @@ def _post(client: httpx.Client, path: Path, data: dict[str, Any]) -> httpx.Respo
             headers=_headers(),
             data=data,
             files={"file": (path.name, fh, "audio/wav")},
+            timeout=_timeout(),
         )
+
+
+def _timeout() -> httpx.Timeout:
+    """单次上传/转写超时：读超时用配置值，上传写入同样放宽到该值（分片最大 20MB）。"""
+    total = float(settings.siliconflow_asr_timeout)
+    return httpx.Timeout(total, connect=10.0, write=total, pool=10.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -170,13 +180,13 @@ def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
         completed = 0
 
         def _do_transcribe(idx: int, chunk_path: Path, start_sec: float, end_sec: float) -> tuple[int, list[dict]]:
-            with httpx.Client(timeout=settings.siliconflow_asr_timeout) as client:
-                payload = _request_transcription(client, chunk_path)
-                part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
-                logger.info("[asr] 分片 {}/{} 转写 {} 句（{:.0f}s–{:.0f}s）",
-                            idx + 1, total, len(part), start_sec, end_sec)
-                chunk_path.unlink(missing_ok=True)
-                return idx, part
+            # 共享连接池：分片并行上传时复用 keep-alive 连接，省掉每片一次 TCP/TLS 握手
+            payload = _request_transcription(http_pool.get_client(), chunk_path)
+            part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
+            logger.info("[asr] 分片 {}/{} 转写 {} 句（{:.0f}s–{:.0f}s）",
+                        idx + 1, total, len(part), start_sec, end_sec)
+            chunk_path.unlink(missing_ok=True)
+            return idx, part
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures: dict[concurrent.futures.Future, int] = {}
@@ -265,8 +275,7 @@ def _iter_chunks(audio_path: Path, tmpdir: Path):
 
 
 def _transcribe_single(path: Path, offset: float, chunk_end: float) -> list[dict]:
-    with httpx.Client(timeout=settings.siliconflow_asr_timeout) as client:
-        payload = _request_transcription(client, path)
+    payload = _request_transcription(http_pool.get_client(), path)
     return _sentences_from_payload(payload, offset=offset, chunk_end=chunk_end)
 
 

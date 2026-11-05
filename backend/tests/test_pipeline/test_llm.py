@@ -113,17 +113,30 @@ def test_split_chunks_respects_limit(monkeypatch):
     chunks = siliconflow_llm._split_chunks(text)
     assert len(chunks) > 1
     assert all(len(chunk) <= 1000 for chunk in chunks)
-    assert "\n".join(chunks) == text
+
+    # 相邻块之间保留重叠区（_CHUNK_OVERLAP_SEC），因此不能直接拼接比对；
+    # 校验三点：首行在首块、尾行在末块、所有行按原顺序都能在块序列中找到。
+    lines = text.splitlines()
+    assert chunks[0].splitlines()[0] == lines[0]
+    assert chunks[-1].splitlines()[-1] == lines[-1]
+
+    stream = [line for chunk in chunks for line in chunk.splitlines()]
+    matched = 0
+    for line in stream:
+        if matched < len(lines) and line == lines[matched]:
+            matched += 1
+    assert matched == len(lines)
 
 
 def test_extract_keypoints_merges_duplicates_across_chunks(monkeypatch):
     monkeypatch.setattr(settings, "siliconflow_max_input_chars", 100)
     text = "\n".join(f"[{i * 10}.0] 第 {i} 句课程内容，用于触发分段。" for i in range(20))
-    calls = {"count": 0}
+    calls: list[str] = []
 
     def fake_chat(prompt: str) -> str:
-        calls["count"] += 1
-        timestamp = 10.0 if calls["count"] == 1 else 500.0
+        # 分段是并行调用的，返回值不能依赖调用顺序：按提示内容判断是不是第一段
+        calls.append(prompt)
+        timestamp = 10.0 if "[0.0] 第 0 句" in prompt else 500.0
         return json.dumps({"keypoints": [
             {"title": "傅里叶变换", "category": "概念", "summary": "定义", "timestamp_sec": timestamp},
             {"title": "傅里叶变换", "category": "概念", "summary": "重复项", "timestamp_sec": timestamp + 5},
@@ -131,8 +144,8 @@ def test_extract_keypoints_merges_duplicates_across_chunks(monkeypatch):
 
     monkeypatch.setattr(siliconflow_llm, "_chat", fake_chat)
     out = siliconflow_llm.extract_keypoints(text, "信号与系统")
-    assert calls["count"] > 1
-    # 邻近同名去重；相隔超过同名窗口的保留为不同知识点
+    assert len(calls) > 1
+    # 同一段内的同名邻近项被去重；跨段相隔超过同名窗口时保留为不同知识点
     assert [item["timestamp_sec"] for item in out] == [10.0, 500.0]
 
 

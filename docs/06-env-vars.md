@@ -51,6 +51,15 @@
 | `SILICONFLOW_BASE_URL` | https://api.siliconflow.cn/v1 |
 | `SILICONFLOW_MODEL` | Qwen/Qwen3-8B |
 | `SILICONFLOW_TIMEOUT` / `SILICONFLOW_MAX_RETRY` | 超时与重试 |
+| `SILICONFLOW_MAX_INPUT_CHARS` | 单次投喂最大字符数，超出后按时间窗口分段做 map-reduce |
+| `SILICONFLOW_LLM_TASK_WORKERS` | 三子任务（重点/总结/导图）并行度，默认 3，1=串行 |
+| `SILICONFLOW_LLM_WORKERS` | 单个子任务内分段（map 阶段）并行度，默认 3 |
+| `SILICONFLOW_LLM_MAX_CONCURRENCY` | 全局在飞 LLM 请求上限（两个并行度的最终闸门），默认 6 |
+| `SILICONFLOW_HTTP_MAX_CONNECTIONS` | LLM/ASR 共享连接池的最大连接数，默认 20 |
+| `SILICONFLOW_HTTP_MAX_KEEPALIVE` | 保持复用的 keep-alive 连接数，默认 10 |
+| `SILICONFLOW_HTTP_KEEPALIVE_EXPIRY` | keep-alive 空闲回收时间（秒），默认 30 |
+
+> 并发相关变量只在性能上有差别：调大能压缩端到端时延，但会更容易撞上对端 429；`MAX_CONCURRENCY` 是硬闸门，前两个并行度再大也不会超过它。
 
 ### 课程平台对接（北交大 CAS + 平台 API）
 | 变量 | 默认 | 说明 |
