@@ -49,6 +49,7 @@ def retry_task(db: Session, failed_task_id: int, user_id: int) -> ParseTask:
         raise AppError("TASK_NOT_RETRYABLE", "仅失败任务可重试", 422)
     new_task = ParseTask(
         course_id=original.course_id,
+        lecture_id=original.lecture_id,
         initiated_by=user_id,
         status="queued",
         retry_count=original.retry_count + 1,

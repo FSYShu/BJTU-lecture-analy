@@ -125,21 +125,25 @@ def run_pipeline(task_id: int) -> None:
         else:
             logger.info("[task={}] Step 4/6 LLM 语义解析", task_id)
 
+            llm_done = 0
+            llm_total = 3
+
             def _on_llm_result(key: str, result: Any) -> None:
+                nonlocal llm_done
                 if key == "keypoints":
                     kp = llm.link_source_transcripts(result, transcripts)
                     kp = platform_assets.align_keypoints(kp, ctx.zsd_items)
                     persist.save_keypoints(db, task_id, task.course_id, kp, seq_to_id, lecture_id=task.lecture_id)
-                    task_service.update_status(db, task_id, "llm_running", None, "llm|keypoints")
                     logger.info("[task={}] 重点已落库：{} 条", task_id, len(kp))
                 elif key == "summary":
                     persist.save_summary(db, task_id, task.course_id, result, lecture_id=task.lecture_id)
-                    task_service.update_status(db, task_id, "llm_running", None, "llm|summary")
                     logger.info("[task={}] 总结已落库", task_id)
                 elif key == "mindmap":
                     persist.save_mindmap(db, task_id, task.course_id, result, lecture_id=task.lecture_id)
-                    task_service.update_status(db, task_id, "llm_running", None, "llm|mindmap")
                     logger.info("[task={}] 导图已落库", task_id)
+                llm_done += 1
+                pct = 55 + int(35 * llm_done / llm_total)
+                task_service.update_status(db, task_id, "llm_running", pct, f"llm|{key}")
 
             _, _, _, failures = llm.run_llm(
                 transcripts, course, task.id,

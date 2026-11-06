@@ -114,6 +114,12 @@ def _save_transcripts(
     lecture_id: int | None = None,
 ) -> dict[int, int]:
     """写入转写，返回 ``{seq_index: transcript.id}`` 供重点溯源。"""
+    # 保存前清除旧字幕：同一 lecture 只保留最新结果，避免重试/重复解析产生重复
+    if lecture_id is not None:
+        db.query(Transcript).filter(Transcript.lecture_id == lecture_id).delete(synchronize_session=False)
+    else:
+        db.query(Transcript).filter(Transcript.task_id == task_id).delete(synchronize_session=False)
+
     rows: list[Transcript] = []
     for index, item in enumerate(transcripts or []):
         text = str(item.get("text", "")).strip()
