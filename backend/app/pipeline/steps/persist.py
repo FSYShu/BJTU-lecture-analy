@@ -47,6 +47,63 @@ def save_results(
         raise StepError("PERSIST_FAIL", f"解析结果落库失败：{exc}", step="persist") from exc
 
 
+def save_transcripts(
+    db: Session, task_id: int, course_id: int, transcripts: list[dict], lecture_id: int | None = None,
+) -> dict[int, int]:
+    """单独保存转写，返回 {seq_index: transcript.id} 供重点溯源。"""
+    course = db.get(Course, course_id)
+    duration = float(course.duration_sec or 0)
+    now = datetime.now(timezone.utc)
+    try:
+        seq_to_id = _save_transcripts(db, task_id, course_id, transcripts, duration, now, lecture_id)
+        db.commit()
+        return seq_to_id
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise StepError("PERSIST_FAIL", f"转写落库失败：{exc}", step="persist") from exc
+
+
+def save_keypoints(
+    db: Session, task_id: int, course_id: int, keypoints: list[dict],
+    seq_to_id: dict[int, int], lecture_id: int | None = None,
+) -> None:
+    """单独保存重点。"""
+    course = db.get(Course, course_id)
+    duration = float(course.duration_sec or 0)
+    now = datetime.now(timezone.utc)
+    try:
+        _save_keypoints(db, task_id, course_id, keypoints, duration, now, seq_to_id, lecture_id)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise StepError("PERSIST_FAIL", f"重点落库失败：{exc}", step="persist") from exc
+
+
+def save_summary(db: Session, task_id: int, course_id: int, summary: dict, lecture_id: int | None = None) -> None:
+    """单独保存总结。"""
+    now = datetime.now(timezone.utc)
+    try:
+        _save_summary(db, task_id, course_id, summary, now, lecture_id)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise StepError("PERSIST_FAIL", f"总结落库失败：{exc}", step="persist") from exc
+
+
+def save_mindmap(
+    db: Session, task_id: int, course_id: int, mindmap: dict, lecture_id: int | None = None,
+) -> None:
+    """单独保存思维导图。"""
+    course = db.get(Course, course_id)
+    now = datetime.now(timezone.utc)
+    try:
+        _save_mindmap(db, task_id, course_id, mindmap, course, now, lecture_id)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise StepError("PERSIST_FAIL", f"导图落库失败：{exc}", step="persist") from exc
+
+
 def _save_transcripts(
     db: Session,
     task_id: int,
@@ -57,6 +114,12 @@ def _save_transcripts(
     lecture_id: int | None = None,
 ) -> dict[int, int]:
     """写入转写，返回 ``{seq_index: transcript.id}`` 供重点溯源。"""
+    # 保存前清除旧字幕：同一 lecture 只保留最新结果，避免重试/重复解析产生重复
+    if lecture_id is not None:
+        db.query(Transcript).filter(Transcript.lecture_id == lecture_id).delete(synchronize_session=False)
+    else:
+        db.query(Transcript).filter(Transcript.task_id == task_id).delete(synchronize_session=False)
+
     rows: list[Transcript] = []
     for index, item in enumerate(transcripts or []):
         text = str(item.get("text", "")).strip()

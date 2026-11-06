@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import secrets
 import time
@@ -234,6 +235,87 @@ async def cas_login(
                 await page.fill('#id_captcha_1', captcha_code)
 
             return await _submit_login(page, username)
+        finally:
+            await browser.close()
+
+
+async def sso_login(username: str, password: str) -> tuple[list[dict], int]:
+    """SSO 统一身份认证登录（无验证码），返回 (完整 Cookie 对象列表, user_id)。
+
+    访问 mis.bjtu.edu.cn 自动重定向到 sso.bjtu.edu.cn 登录页，
+    通过页面内置 doLogin() 函数完成 SM2 加密并提交表单，
+    登录成功后重定向回 mis.bjtu.edu.cn，导出 cookies。
+    user_id 直接取用户输入的学号/教工号。
+    """
+    from loguru import logger
+
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as exc:
+        raise RuntimeError("未安装 Playwright，请执行 uv add playwright && uv run playwright install chromium") from exc
+
+    if not username or not password:
+        raise RuntimeError("SSO 用户名/密码未提供")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+        )
+        try:
+            page = await browser.new_page()
+            logger.info("[platform] SSO 登录：访问 {}", settings.platform_cas_login_url)
+            await page.goto(settings.platform_cas_login_url, wait_until="domcontentloaded", timeout=30000)
+            logger.info("[platform] SSO 登录：已跳转到 {}", page.url)
+
+            await page.wait_for_function("typeof doLogin === 'function'", timeout=10000)
+
+            await page.evaluate(
+                """(args) => doLogin({
+                    username: args[0],
+                    password: args[1],
+                    type: 'username_password'
+                })""",
+                [username, password],
+            )
+            logger.info("[platform] SSO 登录：已调用 doLogin 提交表单")
+
+            try:
+                await page.wait_for_function(
+                    "() => window.location.hostname === 'mis.bjtu.edu.cn'",
+                    timeout=15000,
+                )
+                logger.info("[platform] SSO 登录成功，当前 URL: {}", page.url)
+            except Exception:
+                from app.core.exceptions import AppError
+
+                error_text = await page.evaluate(
+                    """() => {
+                        if (typeof error !== 'undefined' && error) return String(error);
+                        const body = document.body.innerText || '';
+                        const patterns = [
+                            /密码[^\\n]{0,20}错误/,
+                            /用户名[^\\n]{0,20}错误/,
+                            /账号[^\\n]{0,20}错误/,
+                            /登录失败[^\\n]{0,20}/,
+                            /错误[^\\n]{0,30}/,
+                        ];
+                        for (const p of patterns) {
+                            const m = body.match(p);
+                            if (m) return m[0];
+                        }
+                        return '';
+                    }"""
+                )
+                raise AppError(
+                    code="SSO_LOGIN_FAILED",
+                    message=error_text or "登录失败，请检查账号密码",
+                    status_code=400,
+                )
+
+            user_id = int(username)
+            cookies = await page.context.cookies()
+            return cookies, user_id
         finally:
             await browser.close()
 
@@ -911,6 +993,10 @@ async def get_stream_map(cookies: dict, course_sched_id: int, user_id: int) -> d
         return data["res"]["streamMap"]
 
 
+_meta_cache: dict[str, tuple[float, dict]] = {}
+_META_TTL = 300  # 5 分钟
+
+
 async def fetch_course_meta(platform_course_id: str | None) -> dict:
     """供 pipeline/steps/metadata.py 调用：返回课程元数据与三路流。
 
@@ -920,6 +1006,11 @@ async def fetch_course_meta(platform_course_id: str | None) -> dict:
     if not platform_course_id or not settings.platform_base_url:
         return {}
 
+    now = time.time()
+    cached = _meta_cache.get(platform_course_id)
+    if cached and now - cached[0] < _META_TTL:
+        return cached[1]
+
     cookies, user_id = await cas_login()
     cookie_dict = _cookies_to_dict(cookies)
     courses = await list_user_courses(cookie_dict)
@@ -928,17 +1019,22 @@ async def fetch_course_meta(platform_course_id: str | None) -> dict:
         raise ValueError(f"课程 cId={platform_course_id} 不在用户课程列表中")
 
     replays = await list_replay_courses(cookie_dict, target["cId"])
-    result = []
-    for r in replays:
-        stream_map = await get_stream_map(cookie_dict, r["id"], user_id)
-        result.append({"replay": r, "stream_map": stream_map})
+    tasks = [get_stream_map(cookie_dict, r["id"], user_id) for r in replays]
+    stream_maps = await asyncio.gather(*tasks, return_exceptions=True)
+    result = [
+        {"replay": r, "stream_map": sm}
+        for r, sm in zip(replays, stream_maps)
+        if not isinstance(sm, Exception)
+    ]
 
-    return {
+    meta = {
         "cookies": cookie_dict,
         "user_id": user_id,
         "course": target,
         "replays": result,
     }
+    _meta_cache[platform_course_id] = (now, meta)
+    return meta
 
 
 async def list_keypoints(cookies: dict, rp_id: str) -> list[dict]:

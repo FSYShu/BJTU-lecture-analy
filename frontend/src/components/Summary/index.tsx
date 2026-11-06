@@ -20,9 +20,18 @@ export default function SummaryView({ summary }: { summary: Summary }) {
       {chapters.length > 0 && (
         <section>
           <h3 className="font-semibold text-base mb-1">章节要点</h3>
-          <ul className="text-sm list-disc pl-5 space-y-1 text-gray-700">
-            {chapters.map((c, i) => <li key={i}>{c.chapter ?? c}</li>)}
-          </ul>
+          <div className="space-y-2">
+            {chapters.map((c, i) => (
+              <div key={i}>
+                <div className="text-sm font-semibold text-gray-900">{c.chapter ?? c}</div>
+                {Array.isArray(c.points) && c.points.length > 0 && (
+                  <ul className="text-sm list-disc pl-5 mt-0.5 space-y-0.5 text-gray-600">
+                    {c.points.map((p: string, j: number) => <li key={j}>{p}</li>)}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
       {details.length > 0 && (

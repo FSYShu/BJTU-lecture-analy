@@ -1,8 +1,10 @@
-"""课程平台对接端点（CAS 验证码两步流程）。P0。
+"""课程平台对接端点（SSO 统一身份认证登录）。P0。
 
-CAS 登录是系统主入口（无需预先持有本系统 Token）：init 打开 CAS 页截图验证码，
-submit 完成登录后按北交大学号 upsert 本系统用户并签发 JWT，前端据此进入系统。
-课程同步由 /sync-courses 单独完成，登录时只做 CAS 认证 + 签发 JWT，快速返回。
+SSO 登录是系统主入口（无需预先持有本系统 Token）：/sso-login 访问 mis 重定向
+到 SSO 统一身份认证页，通过页面 doLogin() 完成 SM2 加密并提交表单（无验证码），
+登录成功后按北交大学号 upsert 本系统用户并签发 JWT，前端据此进入系统。
+课程同步由 /sync-courses 单独完成，登录时只做 SSO 认证 + 签发 JWT，快速返回。
+原 CAS 验证码两步流程代码保留（见下方注释段），前端主入口已切换为 SSO。
 """
 import json
 import secrets as _secrets
@@ -14,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.security import create_access_token, hash_password
-from app.db.models import Course, Lecture, User
+from app.db.models import Course, Lecture, Transcript, User
 from app.db.session import get_db
 from app.integrations import platform
 from app.schemas.platform import (
@@ -23,6 +25,8 @@ from app.schemas.platform import (
     CaptchaSubmitOut,
     ReplayOut,
     ReplayStreamOut,
+    SsoLoginIn,
+    SsoLoginOut,
     SyncCoursesOut,
 )
 from app.schemas.task import TaskOut
@@ -64,25 +68,66 @@ def _normalize_cookies(raw: list | dict) -> list[dict]:
     ]
 
 
-@router.post("/captcha/init", response_model=CaptchaInitOut)
-async def captcha_init() -> CaptchaInitOut:
-    """打开 CAS 登录页并截图验证码，返回 base64 图片 + session_key。"""
-    image_b64, session_key = await platform.init_cas_captcha()
-    return CaptchaInitOut(captcha_image_base64=image_b64, session_key=session_key)
+# ---------- CAS 验证码两步流程入口（已弃用，保留代码；前端主入口已切换为 SSO /sso-login）----------
+# @router.post("/captcha/init", response_model=CaptchaInitOut)
+# async def captcha_init() -> CaptchaInitOut:
+#     """打开 CAS 登录页并截图验证码，返回 base64 图片 + session_key。"""
+#     image_b64, session_key = await platform.init_cas_captcha()
+#     return CaptchaInitOut(captcha_image_base64=image_b64, session_key=session_key)
+#
+#
+# @router.post("/captcha/submit", response_model=CaptchaSubmitOut)
+# async def captcha_submit(
+#     body: CaptchaSubmitIn, db: Session = Depends(get_db)
+# ) -> CaptchaSubmitOut:
+#     """填入账号密码与验证码完成 CAS 登录，返回 user_id + 本系统访问令牌。
+#
+#     仅完成 CAS 认证 + 持久化 cookies + 签发 JWT，不加载课程。
+#     前端拿到 JWT 后进入主页，由 /sync-courses 异步加载课程。
+#     """
+#     cookies, platform_user_id = await platform.submit_cas_captcha(
+#         body.session_key, body.username, body.password, body.captcha_code
+#     )
+#
+#     username = str(platform_user_id)
+#     user = db.query(User).filter(User.username == username).first()
+#     if user is None:
+#         user = User(
+#             username=username,
+#             hashed_password=hash_password(_secrets.token_urlsafe(32)),
+#             role="teacher",
+#             display_name=f"北交大 {platform_user_id}",
+#             is_active=True,
+#         )
+#         db.add(user)
+#         db.commit()
+#         db.refresh(user)
+#
+#     user.platform_user_id = platform_user_id
+#     user.platform_cookies = json.dumps(cookies, ensure_ascii=False)
+#     user.cookies_updated_at = datetime.now(timezone.utc)
+#     db.commit()
+#     db.refresh(user)
+#
+#     token = create_access_token(user.id, {"role": user.role})
+#     return CaptchaSubmitOut(
+#         user_id=platform_user_id,
+#         access_token=token,
+#         user=UserOut.model_validate(user),
+#     )
 
 
-@router.post("/captcha/submit", response_model=CaptchaSubmitOut)
-async def captcha_submit(
-    body: CaptchaSubmitIn, db: Session = Depends(get_db)
-) -> CaptchaSubmitOut:
-    """填入账号密码与验证码完成 CAS 登录，返回 user_id + 本系统访问令牌。
+@router.post("/sso-login", response_model=SsoLoginOut)
+async def sso_login(
+    body: SsoLoginIn, db: Session = Depends(get_db)
+) -> SsoLoginOut:
+    """SSO 统一身份认证登录（无验证码），返回 user_id + 本系统访问令牌。
 
-    仅完成 CAS 认证 + 持久化 cookies + 签发 JWT，不加载课程。
-    前端拿到 JWT 后进入主页，由 /sync-courses 异步加载课程。
+    访问 mis.bjtu.edu.cn 重定向到 SSO 登录页，通过页面 doLogin() 完成
+    SM2 加密并提交表单。登录成功后按北交大学号 upsert 本系统用户、
+    持久化 cookies 并签发 JWT。课程同步由 /sync-courses 单独完成。
     """
-    cookies, platform_user_id = await platform.submit_cas_captcha(
-        body.session_key, body.username, body.password, body.captcha_code
-    )
+    cookies, platform_user_id = await platform.sso_login(body.username, body.password)
 
     username = str(platform_user_id)
     user = db.query(User).filter(User.username == username).first()
@@ -105,7 +150,7 @@ async def captcha_submit(
     db.refresh(user)
 
     token = create_access_token(user.id, {"role": user.role})
-    return CaptchaSubmitOut(
+    return SsoLoginOut(
         user_id=platform_user_id,
         access_token=token,
         user=UserOut.model_validate(user),
@@ -153,9 +198,9 @@ async def sync_courses(
     return SyncCoursesOut(synced=synced, total=len(courses))
 
 
-@router.get("/courses/{course_id}/replays", response_model=list[ReplayOut])
+@router.get("/courses/{course_key}/replays", response_model=list[ReplayOut])
 async def get_course_replays(
-    course_id: int,
+    course_key: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ReplayOut]:
@@ -165,7 +210,7 @@ async def get_course_replays(
     """
     from app.core.exceptions import AppError
 
-    course = db.get(Course, course_id)
+    course = course_service.find_course_by_key(db, course_key)
     if not course or not course.platform_c_id:
         raise AppError(code="NO_COURSE_ID", message="课程不存在或缺少平台 cId", status_code=400)
 
@@ -178,11 +223,13 @@ async def get_course_replays(
     for r in replays:
         rid = r.get("id", 0)
         lecture = _upsert_lecture(
-            db, course_id, rid,
+            db, course.id, rid,
             teach_time_str=r.get("teachTimeStr"),
             class_room=r.get("classRoom"),
             course_between=r.get("courseBetween"),
         )
+        latest_task = task_service.get_latest_task_by_lecture(db, lecture.id) if lecture.id else None
+        has_result = bool(db.query(Transcript).filter(Transcript.lecture_id == lecture.id).first()) if lecture.id else False
         out.append(ReplayOut(
             id=rid,
             lecture_id=lecture.id,
@@ -195,33 +242,43 @@ async def get_course_replays(
             class_end_time=r.get("classEndTime"),
             course_between=r.get("courseBetween"),
             uuid=r.get("uuid"),
+            latest_task_status=latest_task.status if latest_task else None,
+            has_result=has_result,
         ))
     return out
 
-@router.post("/courses/{course_id}/replays/{replay_id}/stream", response_model=ReplayStreamOut)
+@router.post("/courses/{course_key}/replays/{replay_id}/stream", response_model=ReplayStreamOut)
 async def get_replay_stream(
-    course_id: int,
+    course_key: str,
     replay_id: int,
+    force: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReplayStreamOut:
     """获取指定课次的视频流 URL，供播放器即时播放，不启动解析。
 
-    前端点击回放列表某一项时调用：通过 API 2 获取教师路 HLS 地址，
-    写入 course.video_url 并返回，播放器据此加载视频。
+    前端点击回放列表某一项时调用。若该回放的 video_url 已落库且未强制刷新，
+    直接复用，跳过 Playwright 浏览器调用。
     """
     from app.core.exceptions import AppError
 
-    course = db.get(Course, course_id)
+    course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
+
+    lecture = _upsert_lecture(db, course.id, replay_id)
+    if not force and lecture.video_url:
+        logger.info("[api] get_replay_stream: lecture video_url 已存在，跳过浏览器调用：{}...", lecture.video_url[:80])
+        course.video_url = lecture.video_url
+        db.commit()
+        return ReplayStreamOut(video_url=lecture.video_url)
 
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
 
     cookies = _normalize_cookies(json.loads(user.platform_cookies))
 
-    logger.info("[api] get_replay_stream: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course_id, replay_id, user.ve_user_id, course.platform_c_id)
+    logger.info("[api] get_replay_stream: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course.id, replay_id, user.ve_user_id, course.platform_c_id)
     stream_map, extracted_uid = await platform.get_stream_map_via_browser(
         cookies, replay_id, user.ve_user_id, course.platform_c_id
     )
@@ -229,7 +286,7 @@ async def get_replay_stream(
     if not video_url:
         raise AppError(code="NO_VIDEO_STREAM", message="未能获取视频流地址", status_code=400)
 
-    _upsert_lecture(db, course_id, replay_id, video_url=video_url)
+    lecture.video_url = video_url
     course.video_url = video_url
     if extracted_uid and not user.ve_user_id:
         user.ve_user_id = extracted_uid
@@ -240,9 +297,9 @@ async def get_replay_stream(
     return ReplayStreamOut(video_url=video_url)
 
 
-@router.post("/courses/{course_id}/replays/{replay_id}/parse", response_model=TaskOut, status_code=201)
+@router.post("/courses/{course_key}/replays/{replay_id}/parse", response_model=TaskOut, status_code=201)
 async def parse_replay(
-    course_id: int,
+    course_key: str,
     replay_id: int,
     bg: BackgroundTasks,
     user: User = Depends(get_current_user),
@@ -255,14 +312,14 @@ async def parse_replay(
     """
     from app.core.exceptions import AppError
 
-    course = db.get(Course, course_id)
+    course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
 
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
 
-    lecture = _upsert_lecture(db, course_id, replay_id)
+    lecture = _upsert_lecture(db, course.id, replay_id)
     if lecture.video_url:
         logger.info("[api] parse_replay: lecture video_url 已存在，跳过浏览器调用：{}...", lecture.video_url[:80])
         course.video_url = lecture.video_url
@@ -273,7 +330,7 @@ async def parse_replay(
         if not user.ve_user_id:
             logger.info("[api] ve_user_id 缺失，尝试 UI 模式获取 streamMap")
 
-        logger.info("[api] parse_replay: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course_id, replay_id, user.ve_user_id, course.platform_c_id)
+        logger.info("[api] parse_replay: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course.id, replay_id, user.ve_user_id, course.platform_c_id)
         stream_map, extracted_uid = await platform.get_stream_map_via_browser(
             cookies, replay_id, user.ve_user_id, course.platform_c_id
         )
@@ -291,7 +348,7 @@ async def parse_replay(
         db.commit()
 
     task_service.ensure_parse_ready(course)
-    task = task_service.create_task(db, course_id, user.id, lecture_id=lecture.id)
+    task = task_service.create_task(db, course.id, user.id, lecture_id=lecture.id)
 
     import threading
     threading.Thread(target=parse_worker_run, args=(task.id,), daemon=True).start()

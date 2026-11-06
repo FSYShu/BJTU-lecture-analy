@@ -29,6 +29,8 @@ export interface Replay {
   course_between?: string;
   class_room?: string;
   uuid?: string;
+  latest_task_status?: string | null;
+  has_result?: boolean;
 }
 
 export interface Task {
@@ -84,4 +86,21 @@ export interface Mindmap {
   ai_generated: boolean;
   source_model?: string;
   generated_at: string;
+}
+
+/** 转写概览：首末句 + 总句数，不含全量转写（全量走分页接口）。 */
+export interface TranscriptMeta {
+  total: number;
+  first: Transcript | null;
+  last: Transcript | null;
+}
+
+/** 课次首屏聚合结果（docs/11 流量优化 F4）。 */
+export interface LectureOverview {
+  lecture_id: number;
+  keypoints: Keypoint[];
+  summary: Summary | null;
+  mindmap: Mindmap | null;
+  transcript_meta: TranscriptMeta;
+  task: Task | null;
 }

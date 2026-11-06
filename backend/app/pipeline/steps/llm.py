@@ -1,11 +1,18 @@
 """Step 5：调用大模型语义解析（A2）。
 
 - 输入必须是**带时间戳**的转写行（``[起始秒] 文本``），否则模型只能编造时间点（A2-1）；
+- 三个子任务（重点 / 总结 / 导图）彼此独立，**并行**执行
+  （``SILICONFLOW_LLM_TASK_WORKERS``），总耗时从「三项之和」降到「最慢一项」；
 - 三个子任务各自重试（``SILICONFLOW_MAX_RETRY``），任一失败只降级该项，其余结果保留
   （docs/05:10：已生成的部分结果不回滚丢失）；
 - 重点时间点用本地转写句 seq 溯源，不信任模型输出（docs/03:126、docs/05:49）。
 """
 from __future__ import annotations
+
+import concurrent.futures
+import time
+from collections.abc import Callable
+from typing import Any
 
 from loguru import logger
 
@@ -62,41 +69,68 @@ def run_llm(
     transcripts: list[dict],
     course: Course,
     task_id: int,
+    cancel_check: Callable[[], None] | None = None,
+    on_result: Callable[[str, Any], None] | None = None,
 ) -> tuple[list[dict], dict, dict, list[str]]:
     """生成 ``(重点, 分层总结, 两级导图, 失败项列表)``。
 
+    三个子任务互不依赖，改为**并行**执行：串行时总耗时是三项之和，并行后约等于最慢一项；
+    单项失败只降级该项（``docs/05:10``、AC-02-06）。
     全部子任务失败时抛 ``StepError(LLM_ERROR)``；部分失败时返回已成功的结果 + 失败说明，
-    由编排层先落库、再把任务标记为 failed 供重试（docs/05:10、AC-02-06）。
+    由编排层先落库、再把任务标记为 failed 供重试。
     """
     text = format_transcript(transcripts)
     if not text:
         raise StepError("LLM_ERROR", "转写为空，无法生成解析结果", step="llm")
 
-    keypoints: list[dict] = []
-    summary: dict = {}
-    mindmap: dict = {}
+    jobs: tuple[tuple[str, str, Callable[[str, str], Any]], ...] = (
+        ("重点时间点", "keypoints", _extract_keypoints),
+        ("课程总结", "summary", _generate_summary),
+        ("思维导图", "mindmap", _generate_mindmap),
+    )
+    workers = max(1, min(int(settings.siliconflow_llm_task_workers), len(jobs)))
+
+    results: dict[str, Any] = {}
+    errors: dict[str, Exception] = {}
+    started = time.monotonic()
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=workers, thread_name_prefix="llm-step",
+    ) as executor:
+        futures = {executor.submit(func, text, course.title): key for _, key, func in jobs}
+        try:
+            for future in concurrent.futures.as_completed(futures):
+                if cancel_check:
+                    cancel_check()
+                key = futures[future]
+                try:
+                    result = future.result()
+                    results[key] = result
+                    if on_result:
+                        on_result(key, result)
+                except Exception as exc:  # noqa: BLE001 - 单项降级，其余子任务继续
+                    errors[key] = exc
+        finally:
+            for future in futures:
+                future.cancel()
+
     failures: list[str] = []
+    for label, key, _ in jobs:  # 按固定顺序收集失败说明，日志与错误码稳定可预期
+        exc = errors.get(key)
+        if exc is not None:
+            failures.append(f"{label}：{exc}")
+            logger.warning("[llm] {}生成失败：{}", label, exc)
 
-    try:
-        keypoints = _extract_keypoints(text, course.title) or []
-    except Exception as exc:  # noqa: BLE001 - 单项降级，其余子任务继续
-        failures.append(f"重点时间点：{exc}")
-        logger.warning("[llm] 重点时间点生成失败：{}", exc)
+    logger.info(
+        "[llm] 三子任务并行完成：成功 {} 项 / 失败 {} 项，并发 {}，耗时 {:.1f}s",
+        len(jobs) - len(failures), len(failures), workers, time.monotonic() - started,
+    )
 
-    try:
-        summary = _generate_summary(text, course.title) or {}
-    except Exception as exc:  # noqa: BLE001
-        failures.append(f"课程总结：{exc}")
-        logger.warning("[llm] 课程总结生成失败：{}", exc)
-
-    try:
-        mindmap = _generate_mindmap(text, course.title) or {}
-    except Exception as exc:  # noqa: BLE001
-        failures.append(f"思维导图：{exc}")
-        logger.warning("[llm] 思维导图生成失败：{}", exc)
-
-    if len(failures) == 3:
+    if len(failures) == len(jobs):
         raise StepError("LLM_ERROR", "重点/总结/导图全部生成失败：" + "；".join(failures)[:400], step="llm")
+
+    keypoints = results.get("keypoints") or []
+    summary = results.get("summary") or {}
+    mindmap = results.get("mindmap") or {}
 
     keypoints = link_source_transcripts(keypoints, transcripts)
     return keypoints, summary, mindmap, failures

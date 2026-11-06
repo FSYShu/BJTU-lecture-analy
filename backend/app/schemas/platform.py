@@ -22,6 +22,17 @@ class CaptchaSubmitOut(BaseModel):
     user: UserOut
 
 
+class SsoLoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class SsoLoginOut(BaseModel):
+    user_id: int
+    access_token: str
+    user: UserOut
+
+
 class SyncCoursesOut(BaseModel):
     synced: int
     total: int
@@ -38,6 +49,8 @@ class ReplayOut(BaseModel):
     class_end_time: str | None = None
     course_between: str | None = None
     uuid: str | None = None
+    latest_task_status: str | None = None
+    has_result: bool = False
 
 class ReplayStreamOut(BaseModel):
     video_url: str

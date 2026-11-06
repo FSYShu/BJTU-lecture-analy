@@ -1,15 +1,26 @@
 """解析任务状态/重试。P0-02/08。"""
+import asyncio
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.models import Course, ParseTask, User
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.schemas.task import TaskOut
-from app.services import task_service
+from app.pipeline import proc_registry
+from app.services import task_service, task_stream
 from app.workers.parse_worker import run as parse_worker_run
 
 router = APIRouter()
+
+#: SSE 必须禁用缓冲，否则 nginx / 代理会把事件攒到连接关闭才吐出来。
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 @router.get("/latest", response_model=TaskOut)
@@ -36,6 +47,23 @@ def get_task(task_id: int, user: User = Depends(get_current_user), db: Session =
     return task
 
 
+@router.get("/{task_id}/stream")
+async def stream_task(task_id: int, user: User = Depends(get_current_user)) -> StreamingResponse:
+    """SSE 推送任务状态，替代前端固定间隔轮询（docs/11 优化 4）。
+
+    先同步确认任务存在再开流：否则前端会拿到一个 "200 + 立即 error 帧"，
+    没法区分「任务不存在」和「任务刚刚开始」。
+    """
+    snapshot = await asyncio.to_thread(task_stream.task_snapshot, SessionLocal, task_id)
+    if snapshot is None:
+        raise HTTPException(404, "任务不存在")
+    return StreamingResponse(
+        task_stream.task_events(task_id),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
 @router.post("/{task_id}/retry", response_model=TaskOut, status_code=201)
 def retry_task(task_id: int, bg: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
     original = db.get(ParseTask, task_id)
@@ -49,3 +77,15 @@ def retry_task(task_id: int, bg: BackgroundTasks, user: User = Depends(get_curre
     import threading
     threading.Thread(target=parse_worker_run, args=(new_task.id,), daemon=True).start()
     return new_task
+
+@router.post("/{task_id}/cancel", response_model=TaskOut)
+def cancel_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
+    """用户取消解析：标记 failed+CANCELLED，流水线在阶段切换处检测后退出。"""
+    task = db.get(ParseTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if task.status in ("succeeded", "failed"):
+        return task
+    task_service.mark_failed(db, task_id, "CANCELLED", "用户取消")
+    proc_registry.terminate(task_id)
+    return db.get(ParseTask, task_id)

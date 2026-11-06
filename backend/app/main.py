@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from loguru import logger
 
 from app.api.v1.router import api_router
@@ -16,8 +17,11 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("[app] 启动 {} (env={})", settings.app_name, settings.app_env)
 
+    from app.db.init_db import init_db
     from app.db.models import ParseTask
     from app.db.session import SessionLocal
+
+    init_db()
 
     db = SessionLocal()
     active_statuses = ["queued", "downloading", "extracting_audio", "asr_running", "llm_running", "persisting"]
@@ -32,6 +36,10 @@ async def lifespan(app: FastAPI):
     db.close()
 
     yield
+    # 关闭复用的硅基流动 HTTP 连接池（LLM / ASR 共享），避免进程退出时留下未释放连接
+    from app.integrations import http_pool
+
+    http_pool.close()
     logger.info("[app] 关闭 {}", settings.app_name)
 
 
@@ -51,6 +59,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 register_exception_handlers(app)
 
