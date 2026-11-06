@@ -19,10 +19,13 @@ def list_courses(user: User = Depends(get_current_user), db: Session = Depends(g
     return course_service.list_accessible_courses(db, user)
 
 
-@router.get("/{course_id}", response_model=CourseOut)
-def get_course(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Course:
-    course = course_service.get_accessible_course(db, user, course_id)
+@router.get("/{course_key}", response_model=CourseOut)
+def get_course(course_key: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Course:
+    course = course_service.find_course_by_key(db, course_key)
     if not course:
+        raise HTTPException(404, "课程不存在")
+    accessible = course_service.get_accessible_course(db, user, course.id)
+    if not accessible:
         raise HTTPException(404, "课程不存在或未授权")
     return course
 
@@ -32,13 +35,13 @@ def import_course(body: CourseImportIn, user: User = Depends(get_current_user), 
     return course_service.import_course(db, body, user)
 
 
-@router.post("/{course_id}/parse", response_model=TaskOut, status_code=201)
-def start_parse(course_id: int, bg: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
-    course = db.get(Course, course_id)
+@router.post("/{course_key}/parse", response_model=TaskOut, status_code=201)
+def start_parse(course_key: str, bg: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
+    course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise HTTPException(404, "课程不存在")
     task_service.ensure_parse_ready(course)
-    task = task_service.create_task(db, course_id, user.id)
+    task = task_service.create_task(db, course.id, user.id)
     import threading
     threading.Thread(target=parse_worker_run, args=(task.id,), daemon=True).start()
     return task

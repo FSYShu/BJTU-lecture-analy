@@ -1,5 +1,5 @@
 """课程服务。P0-01。"""
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Course, CourseAuthorization, User
@@ -40,6 +40,19 @@ def get_accessible_course(db: Session, user: User, course_id: int) -> Course | N
         )
     )
     return db.execute(stmt).scalars().first()
+
+
+def find_course_by_key(db: Session, course_key: str) -> Course | None:
+    """按 course_key（{course_num}-{fz_id后两位}）查找课程。"""
+    parts = course_key.rsplit("-", 1)
+    if len(parts) != 2:
+        return None
+    course_num, seq = parts
+    return (
+        db.query(Course)
+        .filter(Course.course_num == course_num, func.substr(Course.fz_id, -2) == seq)
+        .first()
+    )
 
 
 def import_course(db: Session, body: CourseImportIn, user: User) -> Course:

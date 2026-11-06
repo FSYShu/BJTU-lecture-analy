@@ -454,6 +454,9 @@ def _summary_reduce_prompt(notes: list[str], course_title: str) -> str:
     )
 
 
+_SUMMARY_FIELD_NAMES = frozenset({"overview", "chapter_points", "key_details", "review_hints", "summary", "notes"})
+
+
 def _normalize_summary(raw: Any) -> dict:
     if not isinstance(raw, dict):
         return {"overview": None, "chapter_points": [], "key_details": [], "review_hints": []}
@@ -462,6 +465,8 @@ def _normalize_summary(raw: Any) -> dict:
     for item in _as_list(raw.get("chapter_points")):
         if isinstance(item, dict):
             chapter = _clean_str(item.get("chapter") or item.get("title") or item.get("module"))
+            if chapter in _SUMMARY_FIELD_NAMES:
+                continue
             points = [_clean_str(p) for p in _as_list(item.get("points")) if _clean_str(p)]
             if chapter or points:
                 chapter_points.append({"chapter": chapter or "未命名章节", "points": points})

@@ -69,6 +69,8 @@ def run_llm(
     transcripts: list[dict],
     course: Course,
     task_id: int,
+    cancel_check: Callable[[], None] | None = None,
+    on_result: Callable[[str, Any], None] | None = None,
 ) -> tuple[list[dict], dict, dict, list[str]]:
     """生成 ``(重点, 分层总结, 两级导图, 失败项列表)``。
 
@@ -97,9 +99,14 @@ def run_llm(
         futures = {executor.submit(func, text, course.title): key for _, key, func in jobs}
         try:
             for future in concurrent.futures.as_completed(futures):
+                if cancel_check:
+                    cancel_check()
                 key = futures[future]
                 try:
-                    results[key] = future.result()
+                    result = future.result()
+                    results[key] = result
+                    if on_result:
+                        on_result(key, result)
                 except Exception as exc:  # noqa: BLE001 - 单项降级，其余子任务继续
                     errors[key] = exc
         finally:

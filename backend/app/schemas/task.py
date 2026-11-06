@@ -5,6 +5,7 @@ from pydantic import BaseModel
 class TaskOut(BaseModel):
     id: int
     course_id: int
+    lecture_id: int | None = None
     status: str
     progress: int
     current_step: str | None = None

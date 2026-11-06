@@ -16,13 +16,26 @@ from app.services import task_service
 router = APIRouter()
 
 
+def _latest_transcript_task_id(db: Session, lecture_id: int) -> int | None:
+    """该回放下有字幕的最新 task_id，用于只取一份字幕避免多 task 累积重复。"""
+    return db.scalar(
+        select(Transcript.task_id)
+        .where(Transcript.lecture_id == lecture_id)
+        .order_by(Transcript.task_id.desc())
+        .limit(1)
+    )
+
+
 @router.get("/{lecture_id}/transcripts", response_model=list[TranscriptOut])
 def list_transcripts(
     lecture_id: int,
     _lecture: Lecture = Depends(require_lecture_access),
     db: Session = Depends(get_db),
 ) -> list[Transcript]:
-    stmt = select(Transcript).where(Transcript.lecture_id == lecture_id).order_by(Transcript.start_sec)
+    latest_task_id = _latest_transcript_task_id(db, lecture_id)
+    if not latest_task_id:
+        return []
+    stmt = select(Transcript).where(Transcript.task_id == latest_task_id).order_by(Transcript.start_sec)
     return list(db.execute(stmt).scalars())
 
 
@@ -93,17 +106,23 @@ def get_overview(
         .order_by(Mindmap.generated_at.desc())
     ).scalars().first()
 
-    total = db.scalar(
-        select(func.count()).select_from(Transcript).where(Transcript.lecture_id == lecture_id)
-    ) or 0
-    first = db.execute(
-        select(Transcript).where(Transcript.lecture_id == lecture_id)
-        .order_by(Transcript.start_sec).limit(1)
-    ).scalars().first()
-    last = db.execute(
-        select(Transcript).where(Transcript.lecture_id == lecture_id)
-        .order_by(Transcript.start_sec.desc()).limit(1)
-    ).scalars().first()
+    latest_task_id = _latest_transcript_task_id(db, lecture_id)
+    if latest_task_id:
+        total = db.scalar(
+            select(func.count()).select_from(Transcript).where(Transcript.task_id == latest_task_id)
+        ) or 0
+        first = db.execute(
+            select(Transcript).where(Transcript.task_id == latest_task_id)
+            .order_by(Transcript.start_sec).limit(1)
+        ).scalars().first()
+        last = db.execute(
+            select(Transcript).where(Transcript.task_id == latest_task_id)
+            .order_by(Transcript.start_sec.desc()).limit(1)
+        ).scalars().first()
+    else:
+        total = 0
+        first = None
+        last = None
 
     return LectureOverview(
         lecture_id=lecture_id,

@@ -5,6 +5,7 @@ export const getTask = (id: number) => client.get<Task>(`/tasks/${id}`).then((r)
 export const getLatestTask = (lectureId: number) =>
   client.get<Task>(`/tasks/latest`, { params: { lecture_id: lectureId } }).then((r) => r.data);
 export const retryTask = (id: number) => client.post<Task>(`/tasks/${id}/retry`).then((r) => r.data);
+export const cancelTask = (id: number) => client.post<Task>(`/tasks/${id}/cancel`).then((r) => r.data);
 
 /**
  * 订阅任务状态（SSE，docs/11 优化 4）。

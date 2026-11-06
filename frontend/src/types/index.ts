@@ -29,6 +29,8 @@ export interface Replay {
   course_between?: string;
   class_room?: string;
   uuid?: string;
+  latest_task_status?: string | null;
+  has_result?: boolean;
 }
 
 export interface Task {

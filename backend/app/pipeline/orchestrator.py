@@ -45,63 +45,111 @@ def run_pipeline(task_id: int) -> None:
 
         # ---------- Step 1 元数据（含平台字幕/知识点预取） ----------
         _ensure_deadline(deadline)
+        _check_cancelled(db, task_id)
         task_service.update_status(db, task_id, "downloading", 5, "metadata")
         logger.info("[task={}] Step 1/6 元数据", task_id)
         ctx = metadata.fetch_metadata(db, task.course_id)
         course = ctx.course
         reused = _load_parent_results(db, task)
 
-        # ---------- Step 2+3 直接从 URL 提取音频（跳过完整视频下载） ----------
-        task_service.update_status(db, task_id, "downloading", 10, "download")
-        audio_path = _reuse_cached(task.audio_cache_path)
-        if not audio_path:
-            task_service.update_status(db, task_id, "extracting_audio", 12, "audio")
-            logger.info("[task={}] Step 2/6 提取音频（ffmpeg 16kHz WAV）", task_id)
-
-            def _on_audio_progress(out_time: str, speed: str, size_kb: int):
-                detail = f"audio|{out_time}|{speed}x|{size_kb}KB"
-                task_service.update_status(db, task_id, "extracting_audio", None, detail)
-
-            audio_path = download.download_audio_from_url(
-                course.video_url, task.id, progress_callback=_on_audio_progress,
+        # ---------- 已有字幕则跳过音频提取与 ASR ----------
+        db_transcripts: list[dict] = []
+        seq_to_id: dict[int, int] = {}
+        if task.lecture_id and not reused["transcripts"]:
+            rows = (
+                db.query(Transcript)
+                .filter(Transcript.lecture_id == task.lecture_id)
+                .order_by(Transcript.start_sec)
+                .all()
             )
-            task.audio_cache_path = audio_path
-            db.commit()
-            audio_mb = Path(audio_path).stat().st_size / 1024 / 1024
-            logger.info("[task={}] 音频提取完成：{} ({:.1f}MB)", task_id, audio_path, audio_mb)
-        task_service.update_status(db, task_id, "extracting_audio", 20, "audio")
+            if rows:
+                db_transcripts = [_transcript_to_dict(r) for r in rows]
+                seq_to_id = {i: r.id for i, r in enumerate(rows)}
+                logger.info("[task={}] 已有字幕 {} 句，跳过音频提取与 ASR", task_id, len(rows))
 
-        # ---------- Step 4 转写：优先平台 VTT，否则 ASR ----------
-        _ensure_deadline(deadline)
-        task_service.update_status(db, task_id, "asr_running", 25, "asr")
-        if reused["transcripts"]:
-            logger.info("[task={}] Step 3/6 转写（复用父任务）", task_id)
-        transcripts = reused["transcripts"] or _resolve_transcripts(ctx, audio_path, task_id, db, task_id)
-        logger.info("[task={}] 转写完成：{} 句", task_id, len(transcripts))
-        task_service.update_status(db, task_id, "asr_running", 50, "asr")
+        audio_path: str | None = None
+        if db_transcripts:
+            transcripts = db_transcripts
+            task_service.update_status(db, task_id, "asr_running", 50, "asr")
+        else:
+            # ---------- Step 2+3 直接从 URL 提取音频（跳过完整视频下载） ----------
+            _check_cancelled(db, task_id)
+            task_service.update_status(db, task_id, "downloading", 10, "download")
+            audio_path = _reuse_cached(task.audio_cache_path)
+            if not audio_path:
+                task_service.update_status(db, task_id, "extracting_audio", 12, "audio")
+                logger.info("[task={}] Step 2/6 提取音频（ffmpeg 16kHz WAV）", task_id)
 
-        # ---------- Step 5 大模型语义解析 ----------
+                def _on_audio_progress(out_time: str, speed: str, size_kb: int):
+                    _check_cancelled(db, task_id)
+                    detail = f"audio|{out_time}|{speed}x|{size_kb}KB"
+                    task_service.update_status(db, task_id, "extracting_audio", None, detail)
+
+                audio_path = download.download_audio_from_url(
+                    course.video_url, task.id, progress_callback=_on_audio_progress,
+                )
+                task.audio_cache_path = audio_path
+                db.commit()
+                audio_mb = Path(audio_path).stat().st_size / 1024 / 1024
+                logger.info("[task={}] 音频提取完成：{} ({:.1f}MB)", task_id, audio_path, audio_mb)
+            task_service.update_status(db, task_id, "extracting_audio", 20, "audio")
+
+            # ---------- Step 4 转写：优先平台 VTT，否则 ASR ----------
+            _ensure_deadline(deadline)
+            _check_cancelled(db, task_id)
+            task_service.update_status(db, task_id, "asr_running", 25, "asr")
+            if reused["transcripts"]:
+                logger.info("[task={}] Step 3/6 转写（复用父任务）", task_id)
+            transcripts = reused["transcripts"] or _resolve_transcripts(ctx, audio_path, task_id, db, task_id)
+            logger.info("[task={}] 转写完成：{} 句", task_id, len(transcripts))
+            task_service.update_status(db, task_id, "asr_running", 50, "asr")
+
+        # ---------- 转写完成立即落库 ----------
+        if not reused["complete"] and not db_transcripts:
+            seq_to_id = persist.save_transcripts(db, task_id, task.course_id, transcripts, lecture_id=task.lecture_id)
+            logger.info("[task={}] 转写已落库：{} 句", task_id, len(transcripts))
+
+        # ---------- Step 5 大模型语义解析（每子任务完成即落库） ----------
         _ensure_deadline(deadline)
+        _check_cancelled(db, task_id)
         task_service.update_status(db, task_id, "llm_running", 55, "llm")
+        failures: list[str] = []
         if reused["complete"]:
             logger.info("[task={}] Step 4/6 LLM（复用父任务 {}）", task_id, task.parent_task_id)
-            keypoints, summary, mindmap = reused["keypoints"], reused["summary"], reused["mindmap"]
-            failures: list[str] = []
+            _ensure_deadline(deadline)
+            _check_cancelled(db, task_id)
+            task_service.update_status(db, task_id, "persisting", 90, "persist")
+            kp = llm.link_source_transcripts(reused["keypoints"], transcripts)
+            kp = platform_assets.align_keypoints(kp, ctx.zsd_items)
+            persist.save_results(db, task_id, task.course_id, transcripts, kp, reused["summary"], reused["mindmap"], lecture_id=task.lecture_id)
         else:
             logger.info("[task={}] Step 4/6 LLM 语义解析", task_id)
-            keypoints, summary, mindmap, failures = llm.run_llm(transcripts, course, task.id)
-        logger.info("[task={}] LLM 完成：重点 {} 条，总结 {}，导图 {}",
-                     task_id, len(keypoints), bool(summary), bool(mindmap))
-        task_service.update_status(db, task_id, "llm_running", 85, "llm")
 
-        keypoints = llm.link_source_transcripts(keypoints, transcripts)
-        keypoints = platform_assets.align_keypoints(keypoints, ctx.zsd_items)
+            llm_done = 0
+            llm_total = 3
 
-        # ---------- Step 6 持久化 ----------
-        _ensure_deadline(deadline)
-        task_service.update_status(db, task_id, "persisting", 90, "persist")
-        logger.info("[task={}] Step 5/6 持久化", task_id)
-        persist.save_results(db, task_id, task.course_id, transcripts, keypoints, summary, mindmap, lecture_id=task.lecture_id)
+            def _on_llm_result(key: str, result: Any) -> None:
+                nonlocal llm_done
+                if key == "keypoints":
+                    kp = llm.link_source_transcripts(result, transcripts)
+                    kp = platform_assets.align_keypoints(kp, ctx.zsd_items)
+                    persist.save_keypoints(db, task_id, task.course_id, kp, seq_to_id, lecture_id=task.lecture_id)
+                    logger.info("[task={}] 重点已落库：{} 条", task_id, len(kp))
+                elif key == "summary":
+                    persist.save_summary(db, task_id, task.course_id, result, lecture_id=task.lecture_id)
+                    logger.info("[task={}] 总结已落库", task_id)
+                elif key == "mindmap":
+                    persist.save_mindmap(db, task_id, task.course_id, result, lecture_id=task.lecture_id)
+                    logger.info("[task={}] 导图已落库", task_id)
+                llm_done += 1
+                pct = 55 + int(35 * llm_done / llm_total)
+                task_service.update_status(db, task_id, "llm_running", pct, f"llm|{key}")
+
+            _, _, _, failures = llm.run_llm(
+                transcripts, course, task.id,
+                cancel_check=lambda: _check_cancelled(db, task_id),
+                on_result=_on_llm_result,
+            )
         logger.info("[task={}] Step 6/6 完成", task_id)
 
         if failures:
@@ -110,6 +158,7 @@ def run_pipeline(task_id: int) -> None:
             logger.warning("[task={}] 部分解析失败，已完成的结果已落库：{}", task_id, failures)
             return
 
+        _check_cancelled(db, task_id)
         task_service.update_status(db, task_id, "succeeded", 100, "done")
         task.finished_at = datetime.now(timezone.utc)
         db.commit()
@@ -119,12 +168,16 @@ def run_pipeline(task_id: int) -> None:
             cleanup_audio_file(audio_path)
 
     except Exception as exc:  # noqa: BLE001 - 失败隔离：只影响本任务
-        logger.exception("[task={}] 流水线失败", task_id)
         try:
             db.rollback()
         except Exception:  # noqa: BLE001
             logger.warning("[task={}] 回滚失败，继续标记任务状态", task_id)
-        task_service.mark_failed(db, task_id, error_code_for(exc), error_message_for(exc))
+        current = db.get(ParseTask, task_id)
+        if current and current.status == "failed" and current.error_code == "CANCELLED":
+            logger.info("[task={}] 用户取消", task_id)
+        else:
+            logger.exception("[task={}] 流水线失败", task_id)
+            task_service.mark_failed(db, task_id, error_code_for(exc), error_message_for(exc))
     finally:
         db.close()
 
@@ -139,6 +192,13 @@ def _ensure_deadline(deadline: float) -> None:
             f"任务整体超时（TASK_TOTAL_TIMEOUT={settings.task_total_timeout}s）",
             step="orchestrator",
         )
+
+
+def _check_cancelled(db: Session, task_id: int) -> None:
+    """用户取消后任务被标记为 failed+CANCELLED，流水线在阶段切换处主动检查并退出。"""
+    task = db.get(ParseTask, task_id)
+    if task and task.status == "failed" and task.error_code == "CANCELLED":
+        raise StepError("CANCELLED", "用户取消", step="orchestrator")
 
 
 def _reuse_cached(path: str | None) -> str | None:
@@ -168,6 +228,7 @@ def _resolve_transcripts(ctx: CourseContext, audio_path: str, task_id: int, db: 
                        coverage, settings.vtt_min_coverage)
 
     def on_progress(current, total, msg):
+        _check_cancelled(db, tid)
         pct = 25 + int(25 * current / max(1, total))
         if db and tid:
             detail = f"asr|{current}/{total}|{msg or ''}"

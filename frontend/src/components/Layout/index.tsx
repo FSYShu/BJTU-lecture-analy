@@ -1,5 +1,6 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
+import TaskBadge from '@/components/TaskBadge';
 
 export default function Layout() {
   const user = useAuthStore((s) => s.user);
@@ -14,12 +15,15 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="h-14 border-b border-gray-200 bg-white sticky top-0 z-50 flex items-center justify-between px-6">
-        <Link to="/" className="text-lg font-bold text-gray-800">交大课录智析</Link>
+        <div className="flex items-center gap-6">
+          <Link to="/" className="text-lg font-bold text-gray-800">交大课录智析</Link>
+          <Link to="/" className="text-sm text-gray-600 hover:text-primary-600 transition-colors">课程列表</Link>
+        </div>
         <nav className="flex items-center gap-6 text-sm">
-          <Link to="/" className="text-gray-600 hover:text-primary-600 transition-colors">课程列表</Link>
           {user?.role === 'admin' && (
             <Link to="/admin/auth" className="text-gray-600 hover:text-primary-600 transition-colors">授权管理</Link>
           )}
+          <TaskBadge />
           {user ? (
             <>
               <span className="text-gray-500">{user.username}</span>

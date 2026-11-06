@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listCourses, syncCourses, fetchReplays } from '@/api/courses';
+import { listCourses, syncCourses, fetchReplays, courseKey } from '@/api/courses';
 import { GridSkeleton } from '@/components/Loading';
 import Empty from '@/components/Empty';
 import ErrorBanner from '@/components/ErrorBanner';
@@ -20,7 +20,7 @@ export default function CourseList() {
       .then((list) => {
         setCourses(list);
         list.forEach((c) => {
-          fetchReplays(c.id)
+          fetchReplays(courseKey(c))
             .then((replays) => setReplayCounts((prev) => ({ ...prev, [c.id]: replays.length })))
             .catch(() => {});
         });
@@ -38,7 +38,7 @@ export default function CourseList() {
         .then((list) => {
           setCourses(list);
           list.forEach((c) => {
-            fetchReplays(c.id)
+            fetchReplays(courseKey(c))
               .then((replays) => setReplayCounts((prev) => ({ ...prev, [c.id]: replays.length })))
               .catch(() => {});
           });
@@ -59,7 +59,7 @@ export default function CourseList() {
         {courses.map((c) => (
           <Link
             key={c.id}
-            to={`/courses/${c.id}`}
+            to={`/courses/${courseKey(c)}`}
             className="border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-primary-300 transition-all flex flex-col gap-2"
           >
             <div className="font-medium text-gray-800 line-clamp-2">{c.title}</div>

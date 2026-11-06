@@ -9,6 +9,7 @@ from app.api.deps import get_current_user
 from app.db.models import Course, ParseTask, User
 from app.db.session import SessionLocal, get_db
 from app.schemas.task import TaskOut
+from app.pipeline import proc_registry
 from app.services import task_service, task_stream
 from app.workers.parse_worker import run as parse_worker_run
 
@@ -76,3 +77,15 @@ def retry_task(task_id: int, bg: BackgroundTasks, user: User = Depends(get_curre
     import threading
     threading.Thread(target=parse_worker_run, args=(new_task.id,), daemon=True).start()
     return new_task
+
+@router.post("/{task_id}/cancel", response_model=TaskOut)
+def cancel_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
+    """用户取消解析：标记 failed+CANCELLED，流水线在阶段切换处检测后退出。"""
+    task = db.get(ParseTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if task.status in ("succeeded", "failed"):
+        return task
+    task_service.mark_failed(db, task_id, "CANCELLED", "用户取消")
+    proc_registry.terminate(task_id)
+    return db.get(ParseTask, task_id)

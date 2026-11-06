@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.security import create_access_token, hash_password
-from app.db.models import Course, Lecture, User
+from app.db.models import Course, Lecture, Transcript, User
 from app.db.session import get_db
 from app.integrations import platform
 from app.schemas.platform import (
@@ -198,9 +198,9 @@ async def sync_courses(
     return SyncCoursesOut(synced=synced, total=len(courses))
 
 
-@router.get("/courses/{course_id}/replays", response_model=list[ReplayOut])
+@router.get("/courses/{course_key}/replays", response_model=list[ReplayOut])
 async def get_course_replays(
-    course_id: int,
+    course_key: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ReplayOut]:
@@ -210,7 +210,7 @@ async def get_course_replays(
     """
     from app.core.exceptions import AppError
 
-    course = db.get(Course, course_id)
+    course = course_service.find_course_by_key(db, course_key)
     if not course or not course.platform_c_id:
         raise AppError(code="NO_COURSE_ID", message="课程不存在或缺少平台 cId", status_code=400)
 
@@ -223,11 +223,13 @@ async def get_course_replays(
     for r in replays:
         rid = r.get("id", 0)
         lecture = _upsert_lecture(
-            db, course_id, rid,
+            db, course.id, rid,
             teach_time_str=r.get("teachTimeStr"),
             class_room=r.get("classRoom"),
             course_between=r.get("courseBetween"),
         )
+        latest_task = task_service.get_latest_task_by_lecture(db, lecture.id) if lecture.id else None
+        has_result = bool(db.query(Transcript).filter(Transcript.lecture_id == lecture.id).first()) if lecture.id else False
         out.append(ReplayOut(
             id=rid,
             lecture_id=lecture.id,
@@ -240,33 +242,43 @@ async def get_course_replays(
             class_end_time=r.get("classEndTime"),
             course_between=r.get("courseBetween"),
             uuid=r.get("uuid"),
+            latest_task_status=latest_task.status if latest_task else None,
+            has_result=has_result,
         ))
     return out
 
-@router.post("/courses/{course_id}/replays/{replay_id}/stream", response_model=ReplayStreamOut)
+@router.post("/courses/{course_key}/replays/{replay_id}/stream", response_model=ReplayStreamOut)
 async def get_replay_stream(
-    course_id: int,
+    course_key: str,
     replay_id: int,
+    force: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReplayStreamOut:
     """获取指定课次的视频流 URL，供播放器即时播放，不启动解析。
 
-    前端点击回放列表某一项时调用：通过 API 2 获取教师路 HLS 地址，
-    写入 course.video_url 并返回，播放器据此加载视频。
+    前端点击回放列表某一项时调用。若该回放的 video_url 已落库且未强制刷新，
+    直接复用，跳过 Playwright 浏览器调用。
     """
     from app.core.exceptions import AppError
 
-    course = db.get(Course, course_id)
+    course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
+
+    lecture = _upsert_lecture(db, course.id, replay_id)
+    if not force and lecture.video_url:
+        logger.info("[api] get_replay_stream: lecture video_url 已存在，跳过浏览器调用：{}...", lecture.video_url[:80])
+        course.video_url = lecture.video_url
+        db.commit()
+        return ReplayStreamOut(video_url=lecture.video_url)
 
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
 
     cookies = _normalize_cookies(json.loads(user.platform_cookies))
 
-    logger.info("[api] get_replay_stream: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course_id, replay_id, user.ve_user_id, course.platform_c_id)
+    logger.info("[api] get_replay_stream: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course.id, replay_id, user.ve_user_id, course.platform_c_id)
     stream_map, extracted_uid = await platform.get_stream_map_via_browser(
         cookies, replay_id, user.ve_user_id, course.platform_c_id
     )
@@ -274,7 +286,7 @@ async def get_replay_stream(
     if not video_url:
         raise AppError(code="NO_VIDEO_STREAM", message="未能获取视频流地址", status_code=400)
 
-    _upsert_lecture(db, course_id, replay_id, video_url=video_url)
+    lecture.video_url = video_url
     course.video_url = video_url
     if extracted_uid and not user.ve_user_id:
         user.ve_user_id = extracted_uid
@@ -285,9 +297,9 @@ async def get_replay_stream(
     return ReplayStreamOut(video_url=video_url)
 
 
-@router.post("/courses/{course_id}/replays/{replay_id}/parse", response_model=TaskOut, status_code=201)
+@router.post("/courses/{course_key}/replays/{replay_id}/parse", response_model=TaskOut, status_code=201)
 async def parse_replay(
-    course_id: int,
+    course_key: str,
     replay_id: int,
     bg: BackgroundTasks,
     user: User = Depends(get_current_user),
@@ -300,14 +312,14 @@ async def parse_replay(
     """
     from app.core.exceptions import AppError
 
-    course = db.get(Course, course_id)
+    course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
 
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
 
-    lecture = _upsert_lecture(db, course_id, replay_id)
+    lecture = _upsert_lecture(db, course.id, replay_id)
     if lecture.video_url:
         logger.info("[api] parse_replay: lecture video_url 已存在，跳过浏览器调用：{}...", lecture.video_url[:80])
         course.video_url = lecture.video_url
@@ -318,7 +330,7 @@ async def parse_replay(
         if not user.ve_user_id:
             logger.info("[api] ve_user_id 缺失，尝试 UI 模式获取 streamMap")
 
-        logger.info("[api] parse_replay: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course_id, replay_id, user.ve_user_id, course.platform_c_id)
+        logger.info("[api] parse_replay: course_id={}, replay_id={}, ve_user_id={}, platform_c_id={}", course.id, replay_id, user.ve_user_id, course.platform_c_id)
         stream_map, extracted_uid = await platform.get_stream_map_via_browser(
             cookies, replay_id, user.ve_user_id, course.platform_c_id
         )
@@ -336,7 +348,7 @@ async def parse_replay(
         db.commit()
 
     task_service.ensure_parse_ready(course)
-    task = task_service.create_task(db, course_id, user.id, lecture_id=lecture.id)
+    task = task_service.create_task(db, course.id, user.id, lecture_id=lecture.id)
 
     import threading
     threading.Thread(target=parse_worker_run, args=(task.id,), daemon=True).start()
