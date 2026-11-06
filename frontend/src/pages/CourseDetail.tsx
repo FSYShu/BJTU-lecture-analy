@@ -280,27 +280,31 @@ export default function CourseDetail() {
   const handleSelectReplay = async (r: Replay) => {
     if (loadingStream !== null) return;
     setSelectedReplayId(r.id);
+    setCurrentSec(0);
+    currentSecRef.current = 0;
+    lastSaveSecRef.current = 0;
+    saveCurrentSec(courseKey, 0);
     const lid = r.lecture_id ?? null;
 
     setLoadingStream(r.id);
-    try {
-      const res = await fetchReplayStream(courseKey, r.id);
-      const url = typeof res === 'string' ? res : (res?.video_url || '');
-      if (url) {
-        setReplayVideoUrl(url);
-      } else {
-        toast.error('未获取到视频地址');
-      }
-    } catch (err: any) {
+
+    // 视频流与 AI 解析并行获取：解析只依赖 lecture_id，与流地址无关
+    const streamPromise = fetchReplayStream(courseKey, r.id).catch((err: any) => {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || '获取视频流失败';
       toast.error(typeof msg === 'string' ? msg : '获取视频流失败');
-      setReplayVideoUrl('');
-    } finally {
-      setLoadingStream(null);
-    }
+      return null;
+    });
+    const overviewPromise = lid ? refreshAll(lid) : Promise.resolve(null);
+    const [res, overview] = await Promise.all([streamPromise, overviewPromise]);
+
+    const url = typeof res === 'string' ? res : (res?.video_url || '');
+
+    setReplayVideoUrl(url);
+    if (!url) toast.error('未获取到视频地址');
+    setLoadingStream(null);
+
     if (lid) {
       setActiveLectureId(lid);
-      const overview = await refreshAll(lid);
       const latest = overview?.task ?? null;
       watchTask(latest);
       const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap || (overview?.transcript_meta?.total ?? 0) > 0;
@@ -339,7 +343,7 @@ export default function CourseDetail() {
           {/* 左侧：播放器 + 字幕 + 课程概览 */}
           <div className="lg:col-span-2 space-y-4">
             <div className="border border-gray-200 rounded-lg overflow-hidden bg-black">
-              <Player src={videoUrl} transcripts={transcripts} loading={loadingReplays || loadingStream !== null} initialTime={currentSec} onTimeUpdate={handleTimeUpdate} onSeekReady={setSeek} />
+              <Player src={videoUrl} transcripts={transcripts} loading={loadingReplays || loadingStream !== null} initialTime={currentSec} onTimeUpdate={handleTimeUpdate} onSeekReady={(s) => setSeek(() => s)} />
             </div>
             {transcripts.length > 0 && (
               <Subtitle transcripts={transcripts} currentSec={currentSec} onSeek={seek} />

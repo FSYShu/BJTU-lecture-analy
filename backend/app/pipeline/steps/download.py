@@ -6,6 +6,7 @@ from pathlib import Path
 from loguru import logger
 
 from app.config import settings
+from app.pipeline import proc_registry
 from app.pipeline.errors import StepError
 from app.pipeline.retry import with_retry
 
@@ -97,6 +98,7 @@ def download_audio_from_url(url: str, task_id: int, progress_callback=None) -> s
 
     logger.info("[task={}] 启动 ffmpeg 提取音频", task_id)
 
+    proc: subprocess.Popen | None = None
     try:
         proc = subprocess.Popen(
             cmd,
@@ -106,6 +108,7 @@ def download_audio_from_url(url: str, task_id: int, progress_callback=None) -> s
             encoding="utf-8",
             errors="replace",
         )
+        proc_registry.register(task_id, proc)
         last_log = time.monotonic()
         progress_data: dict[str, str] = {}
         for line in proc.stderr:
@@ -135,8 +138,23 @@ def download_audio_from_url(url: str, task_id: int, progress_callback=None) -> s
                 progress_data = {}
         proc.wait()
         if proc.returncode != 0:
+            if proc_registry.was_killed(task_id):
+                raise StepError("CANCELLED", "用户取消", step="download_audio")
             raise OSError(f"音频提取失败，ffmpeg 返回码 {proc.returncode}")
     except FileNotFoundError as exc:
         raise OSError("ffmpeg 未安装") from exc
+    finally:
+        if proc is not None:
+            proc_registry.unregister(task_id)
+            proc_registry.clear_killed(task_id)
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except Exception:  # noqa: BLE001
+                    try:
+                        proc.kill()
+                    except Exception:  # noqa: BLE001
+                        pass
 
     return str(out_path)

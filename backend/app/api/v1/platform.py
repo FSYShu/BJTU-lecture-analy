@@ -251,19 +251,27 @@ async def get_course_replays(
 async def get_replay_stream(
     course_key: str,
     replay_id: int,
+    force: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ReplayStreamOut:
     """获取指定课次的视频流 URL，供播放器即时播放，不启动解析。
 
-    前端点击回放列表某一项时调用：通过 API 2 获取教师路 HLS 地址，
-    写入 course.video_url 并返回，播放器据此加载视频。
+    前端点击回放列表某一项时调用。若该回放的 video_url 已落库且未强制刷新，
+    直接复用，跳过 Playwright 浏览器调用。
     """
     from app.core.exceptions import AppError
 
     course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
+
+    lecture = _upsert_lecture(db, course.id, replay_id)
+    if not force and lecture.video_url:
+        logger.info("[api] get_replay_stream: lecture video_url 已存在，跳过浏览器调用：{}...", lecture.video_url[:80])
+        course.video_url = lecture.video_url
+        db.commit()
+        return ReplayStreamOut(video_url=lecture.video_url)
 
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
@@ -278,7 +286,7 @@ async def get_replay_stream(
     if not video_url:
         raise AppError(code="NO_VIDEO_STREAM", message="未能获取视频流地址", status_code=400)
 
-    _upsert_lecture(db, course.id, replay_id, video_url=video_url)
+    lecture.video_url = video_url
     course.video_url = video_url
     if extracted_uid and not user.ve_user_id:
         user.ve_user_id = extracted_uid

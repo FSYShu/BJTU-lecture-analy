@@ -61,10 +61,11 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
   }, []);
 
   useEffect(() => {
+
     if (!videoRef.current) return;
 
     if (playerRef.current) {
-      playerRef.current.dispose();
+      try { playerRef.current.dispose(); } catch { /* noop */ }
       playerRef.current = null;
       remoteTrackRef.current = null;
     }
@@ -87,6 +88,7 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
           type: src.includes('.m3u8') ? 'application/x-mpegURL' : undefined,
         }],
       });
+
       playerRef.current.on('timeupdate', () => onTimeUpdate?.(playerRef.current.currentTime()));
       playerRef.current.on('loadedmetadata', () => {
         const pending = pendingSeekRef.current;
@@ -105,7 +107,7 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
       setError('播放器初始化失败');
     }
     return () => {
-      playerRef.current?.dispose();
+      try { playerRef.current?.dispose(); } catch { /* noop */ }
       playerRef.current = null;
       remoteTrackRef.current = null;
       setPlayerReady(false);
@@ -167,7 +169,7 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
   }, [seek, onSeekReady]);
 
   return (
-    <div data-vjs-player style={{ minHeight: '360px', position: 'relative' }}>
+    <div key={src} data-vjs-player style={{ minHeight: '360px', position: 'relative' }}>
       <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
       {!src && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-black">

@@ -9,6 +9,7 @@ from app.api.deps import get_current_user
 from app.db.models import Course, ParseTask, User
 from app.db.session import SessionLocal, get_db
 from app.schemas.task import TaskOut
+from app.pipeline import proc_registry
 from app.services import task_service, task_stream
 from app.workers.parse_worker import run as parse_worker_run
 
@@ -86,4 +87,5 @@ def cancel_task(task_id: int, user: User = Depends(get_current_user), db: Sessio
     if task.status in ("succeeded", "failed"):
         return task
     task_service.mark_failed(db, task_id, "CANCELLED", "用户取消")
+    proc_registry.terminate(task_id)
     return db.get(ParseTask, task_id)
