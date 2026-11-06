@@ -5,21 +5,24 @@ import Subtitle from '@/components/Subtitle';
 import Keypoints from '@/components/Keypoints';
 import SummaryView from '@/components/Summary';
 import MindmapView from '@/components/Mindmap';
-import ProgressStepper from '@/components/ProgressStepper';
 import { getCourse, fetchReplays, parseReplay, fetchReplayStream } from '@/api/courses';
 import { getLectureOverview, listTranscripts } from '@/api';
+import { getTask } from '@/api/tasks';
 import { useTaskWatcher } from '@/hooks/useTask';
 import { toast } from '@/store/toast';
+import { useTaskStore } from '@/store/task';
+import { useCourseCacheStore, loadCurrentSec, saveCurrentSec } from '@/store/courseCache';
 import type { Course, Replay, Transcript, Keypoint, Summary, Mindmap, Task, LectureOverview } from '@/types';
 
 const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'extracting_audio', 'asr_running', 'llm_running', 'persisting']);
 
 
 export default function CourseDetail() {
-  const { id } = useParams<{ id: string }>();
-  const courseId = Number(id);
+  const { courseKey = '' } = useParams<{ courseKey: string }>();
   const [course, setCourse] = useState<Course | null>(null);
   const [currentSec, setCurrentSec] = useState(0);
+  const currentSecRef = useRef(0);
+  const lastSaveSecRef = useRef(0);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [keypoints, setKeypoints] = useState<Keypoint[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -27,15 +30,13 @@ export default function CourseDetail() {
 
   const [seek, setSeek] = useState<(t: number) => void>(() => {});
   const [replays, setReplays] = useState<Replay[]>([]);
+  const [loadingReplays, setLoadingReplays] = useState(true);
   const [selectedReplayId, setSelectedReplayId] = useState<number | null>(null);
 
   const [replayVideoUrl, setReplayVideoUrl] = useState<string>('');
   const [loadingStream, setLoadingStream] = useState<number | null>(null);
-  const [parsingId, setParsingId] = useState<number | null>(null);
-  const [task, setTask] = useState<Task | null>(null);
-  const [taskStartTime, setTaskStartTime] = useState<number | null>(null);
-  const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const setTask = useTaskStore((s) => s.setTask);
+  const parseQueueRef = useRef<Replay[]>([]);
 
   // 任务订阅：当前在看哪个课次、订阅哪个任务
   const [activeLectureId, setActiveLectureId] = useState<number | null>(null);
@@ -64,85 +65,216 @@ export default function CourseDetail() {
     listTranscripts(lectureId).then(setTranscripts).catch(() => {});
   }, []);
 
+  /** LLM 阶段每子任务完成即刷 overview（重点/总结/导图），不动转写。 */
+  const refreshOverview = useCallback(async (lectureId: number) => {
+    try {
+      const overview = await getLectureOverview(lectureId);
+      setKeypoints(overview.keypoints);
+      setSummary(overview.summary);
+      setMindmap(overview.mindmap);
+    } catch {}
+  }, []);
+
+  /** 发起解析：调 parseReplay 后写入全局 task store 并订阅。 */
+  const startParse = async (r: Replay) => {
+    try {
+      const res: Task = await parseReplay(courseKey, r.id);
+      setTask(res);
+      lastStepRef.current = res.current_step ?? null;
+      setActiveTaskId(res.id);
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || '发起解析失败';
+      toast.error(typeof msg === 'string' ? msg : '发起解析失败');
+    }
+  };
+
+  /** 入队解析：当前无任务在跑则立即解析，否则排队等终态后触发。 */
+  const enqueueParse = (r: Replay) => {
+    const current = useTaskStore.getState().task;
+    const running = current != null && ACTIVE_STATUSES.has(current.status);
+    if (running) {
+      if (!parseQueueRef.current.some((q) => q.id === r.id)) {
+        parseQueueRef.current.push(r);
+      }
+    } else {
+      void startParse(r);
+    }
+  };
+
   useTaskWatcher(activeTaskId, {
     onTask: (t) => {
+      if (t.status === 'failed' && t.error_code === 'CANCELLED') {
+        setTask(null);
+        return;
+      }
       setTask(t);
-      setLastUpdateTime(Date.now());
-      // 换步骤时才刷一次转写，避免 SSE 每帧都打接口
+      // 换步骤时才刷一次，避免 SSE 每帧都打接口
       if (t.current_step !== lastStepRef.current) {
         lastStepRef.current = t.current_step ?? null;
-        if (activeLectureId) refreshBasic(activeLectureId);
+        if (t.lecture_id && t.lecture_id === activeLectureId) {
+          if (t.current_step?.startsWith('llm')) {
+            refreshOverview(t.lecture_id);
+          } else {
+            refreshBasic(t.lecture_id);
+          }
+        }
       }
     },
     onTerminal: (t) => {
-      setParsingId(null);
-      setTaskStartTime(null);
       setActiveTaskId(null);
       if (t.status === 'succeeded') {
-        if (activeLectureId) refreshAll(activeLectureId);
-      } else {
+        if (t.lecture_id && t.lecture_id === activeLectureId) refreshAll(t.lecture_id);
+      } else if (t.error_code !== 'CANCELLED') {
         toast.error(t.error_message || '解析失败');
       }
+      const next = parseQueueRef.current.shift();
+      if (next) void startParse(next);
     },
   });
-
-  useEffect(() => {
-    if (taskStartTime) {
-      const timer = setInterval(() => setElapsedSec(Math.floor((Date.now() - taskStartTime) / 1000)), 1000);
-      return () => clearInterval(timer);
-    }
-  }, [taskStartTime]);
 
   /** 订阅任务：非终态才订阅，终态直接展示。 */
   const watchTask = useCallback((latest: Task | null) => {
     if (latest && ACTIVE_STATUSES.has(latest.status)) {
       setTask(latest);
-      setParsingId(-1);
-      setTaskStartTime(Date.now());
-      setLastUpdateTime(Date.now());
       lastStepRef.current = latest.current_step ?? null;
       setActiveTaskId(latest.id);
     } else {
       setTask(latest);
-      setParsingId(null);
-      setTaskStartTime(null);
     }
-  }, []);
+  }, [setTask]);
 
   // 进入详情：加载课程 + 回放列表，自动选中第一个回放并加载播放器与对应 AI 解析
   useEffect(() => {
-    getCourse(courseId).then(setCourse).catch(() => {});
-    fetchReplays(courseId)
+    let cancelled = false;
+
+    const restoredSec = loadCurrentSec(courseKey);
+    setCurrentSec(restoredSec);
+    currentSecRef.current = restoredSec;
+    lastSaveSecRef.current = restoredSec;
+
+    const cached = useCourseCacheStore.getState().cache[courseKey];
+    if (cached && cached.course) {
+      setCourse(cached.course);
+      setTranscripts(cached.transcripts);
+      setKeypoints(cached.keypoints);
+      setSummary(cached.summary);
+      setMindmap(cached.mindmap);
+      setReplays(cached.replays);
+      setSelectedReplayId(cached.selectedReplayId);
+      setReplayVideoUrl(cached.replayVideoUrl);
+      setActiveLectureId(cached.activeLectureId);
+      setActiveTaskId(cached.activeTaskId);
+      lastStepRef.current = cached.lastStep;
+      setLoadingReplays(false);
+
+      if (cached.activeTaskId) {
+        getTask(cached.activeTaskId)
+          .then((t) => {
+            if (cancelled) return;
+            if (ACTIVE_STATUSES.has(t.status)) {
+              setTask(t);
+              lastStepRef.current = t.current_step ?? null;
+            } else {
+              setActiveTaskId(null);
+              if (t.status === 'succeeded' && cached.activeLectureId) {
+                refreshAll(cached.activeLectureId);
+              } else {
+                setTask(null);
+              }
+            }
+          })
+          .catch(() => {
+            if (!cancelled) setActiveTaskId(null);
+          });
+      }
+
+      return () => {
+        cancelled = true;
+        saveCurrentSec(courseKey, currentSecRef.current);
+      };
+    }
+
+    getCourse(courseKey).then((c) => { if (!cancelled) setCourse(c); }).catch(() => {});
+    setLoadingReplays(true);
+    fetchReplays(courseKey)
       .then(async (list) => {
-        setReplays(list);
-        if (list.length > 0) {
-          const first = list[0];
+        if (cancelled) return;
+        const reversed = [...list].reverse();
+        setReplays(reversed);
+        setLoadingReplays(false);
+        if (reversed.length > 0) {
+          const first = reversed[0];
           setSelectedReplayId(first.id);
 
           setLoadingStream(first.id);
           try {
-            const res = await fetchReplayStream(courseId, first.id);
+            const res = await fetchReplayStream(courseKey, first.id);
+            if (cancelled) return;
             const url = typeof res === 'string' ? res : (res?.video_url || '');
             if (url) setReplayVideoUrl(url);
-          } catch {
-            /* 静默 */
+          } catch (err: any) {
+            if (cancelled) return;
+            const msg = err?.response?.data?.detail || err?.response?.data?.message || '获取视频流失败';
+            toast.error(typeof msg === 'string' ? msg : '获取视频流失败');
           } finally {
-            setLoadingStream(null);
+            if (!cancelled) setLoadingStream(null);
           }
+          if (cancelled) return;
           const lid = first.lecture_id;
           if (lid) {
             setActiveLectureId(lid);
             const overview = await refreshAll(lid);
-            watchTask(overview?.task ?? null);
+            if (cancelled) return;
+            const latest = overview?.task ?? null;
+            watchTask(latest);
+            const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap || (overview?.transcript_meta?.total ?? 0) > 0;
+            const isActive = latest && ACTIVE_STATUSES.has(latest.status);
+            if (!isActive && !hasResult) {
+              enqueueParse(first);
+            }
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (cancelled) return;
+        setLoadingReplays(false);
+        toast.error('回放列表加载失败');
+      });
 
     return () => {
+      cancelled = true;
       setActiveTaskId(null);
+      saveCurrentSec(courseKey, currentSecRef.current);
     };
-  }, [courseId, refreshAll, watchTask]);
+  }, [courseKey, refreshAll, watchTask]);
+
+  // 业务状态变化时同步写入缓存（currentSec 高频变化，单独处理不进此 effect）
+  useEffect(() => {
+    if (course || transcripts.length > 0 || replays.length > 0) {
+      useCourseCacheStore.getState().patch(courseKey, {
+        course, transcripts, keypoints, summary, mindmap,
+        replays, selectedReplayId, replayVideoUrl,
+        activeLectureId, activeTaskId,
+        lastStep: lastStepRef.current,
+      });
+    }
+  }, [course, transcripts, keypoints, summary, mindmap, replays, selectedReplayId, replayVideoUrl, activeLectureId, activeTaskId, courseKey]);
+
+  // 浏览器刷新/关闭前保存播放进度
+  useEffect(() => {
+    const handler = () => saveCurrentSec(courseKey, currentSecRef.current);
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [courseKey]);
+
+  const handleTimeUpdate = useCallback((t: number) => {
+    setCurrentSec(t);
+    currentSecRef.current = t;
+    if (t - lastSaveSecRef.current >= 1) {
+      lastSaveSecRef.current = t;
+      saveCurrentSec(courseKey, t);
+    }
+  }, [courseKey]);
 
   // 点击回放项：加载视频 + 对应 AI 解析
   const handleSelectReplay = async (r: Replay) => {
@@ -152,7 +284,7 @@ export default function CourseDetail() {
 
     setLoadingStream(r.id);
     try {
-      const res = await fetchReplayStream(courseId, r.id);
+      const res = await fetchReplayStream(courseKey, r.id);
       const url = typeof res === 'string' ? res : (res?.video_url || '');
       if (url) {
         setReplayVideoUrl(url);
@@ -169,40 +301,25 @@ export default function CourseDetail() {
     if (lid) {
       setActiveLectureId(lid);
       const overview = await refreshAll(lid);
-      watchTask(overview?.task ?? null);
+      const latest = overview?.task ?? null;
+      watchTask(latest);
+      const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap || (overview?.transcript_meta?.total ?? 0) > 0;
+      const isActive = latest && ACTIVE_STATUSES.has(latest.status);
+      if (!isActive && !hasResult) {
+        enqueueParse(r);
+      }
     } else {
       setTranscripts([]);
       setKeypoints([]);
       setSummary(null);
       setMindmap(null);
       setTask(null);
-      setParsingId(null);
       setActiveLectureId(null);
       setActiveTaskId(null);
     }
   };
 
-  // 点击解析按钮：启动解析
-  const handleParseReplay = async (r: Replay) => {
-    if (parsingId !== null) return;
-    setParsingId(r.id);
-    try {
-      const res: Task = await parseReplay(courseId, r.id);
-      toast.success('已开始解析');
-      if (r.lecture_id) setActiveLectureId(r.lecture_id);
-      setTask(res);
-      setTaskStartTime(Date.now());
-      setLastUpdateTime(Date.now());
-      lastStepRef.current = res.current_step ?? null;
-      setActiveTaskId(res.id);
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || '发起解析失败';
-      toast.error(typeof msg === 'string' ? msg : '发起解析失败');
-      setParsingId(null);
-    }
-  };
 
-  const isParsing = task != null && ACTIVE_STATUSES.has(task.status);
   const videoUrl = replayVideoUrl || course?.video_url || '';
 
   return (
@@ -222,7 +339,7 @@ export default function CourseDetail() {
           {/* 左侧：播放器 + 字幕 + 课程概览 */}
           <div className="lg:col-span-2 space-y-4">
             <div className="border border-gray-200 rounded-lg overflow-hidden bg-black">
-              <Player src={videoUrl} onTimeUpdate={setCurrentSec} onSeekReady={setSeek} />
+              <Player src={videoUrl} transcripts={transcripts} loading={loadingReplays || loadingStream !== null} initialTime={currentSec} onTimeUpdate={handleTimeUpdate} onSeekReady={setSeek} />
             </div>
             {transcripts.length > 0 && (
               <Subtitle transcripts={transcripts} currentSec={currentSec} onSeek={seek} />
@@ -263,13 +380,14 @@ export default function CourseDetail() {
                           <div className="text-xs text-primary-600 mt-1">加载视频中...</div>
                         )}
                       </button>
-                      <button
-                        onClick={() => handleParseReplay(r)}
-                        disabled={isParsing}
-                        className="mt-2 w-full text-xs py-1 rounded border border-primary-300 text-primary-600 hover:bg-primary-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {parsingId === r.id ? '解析中...' : isParsing ? '等待中' : '开始解析'}
-                      </button>
+                      {r.has_result && (
+                        <button
+                          onClick={() => enqueueParse(r)}
+                          className="mt-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                        >
+                          重新生成
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -282,15 +400,6 @@ export default function CourseDetail() {
           </div>
         </div>
 
-        {isParsing && task && (
-          <ProgressStepper
-            status={task.status}
-            progress={task.progress}
-            currentStep={task.current_step}
-            elapsedSec={elapsedSec}
-            lastUpdateSec={lastUpdateTime ? Math.floor((Date.now() - lastUpdateTime) / 1000) : -1}
-          />
-        )}
       </div>
     </SeekContext.Provider>
   );

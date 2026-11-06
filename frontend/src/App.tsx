@@ -14,7 +14,7 @@ export default function App() {
       <Route path="/cas-login" element={<CasLogin />} />
       <Route element={<Layout />}>
         <Route path="/" element={<CourseList />} />
-        <Route path="/courses/:id" element={<CourseDetail />} />
+        <Route path="/courses/:courseKey" element={<CourseDetail />} />
         <Route path="/admin/auth" element={<AdminAuth />} />
       </Route>
     </Routes>

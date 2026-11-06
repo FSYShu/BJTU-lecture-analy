@@ -49,6 +49,8 @@ class ReplayOut(BaseModel):
     class_end_time: str | None = None
     course_between: str | None = None
     uuid: str | None = None
+    latest_task_status: str | None = None
+    has_result: bool = False
 
 class ReplayStreamOut(BaseModel):
     video_url: str

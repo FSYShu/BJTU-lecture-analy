@@ -101,6 +101,9 @@ def update_status(db: Session, task_id: int, status: str, progress: int | None =
         task.progress = max(0, min(100, int(progress)))
     if current_step:
         task.current_step = current_step
+    if status != "failed":
+        task.error_code = None
+        task.error_message = None
     db.commit()
 
 

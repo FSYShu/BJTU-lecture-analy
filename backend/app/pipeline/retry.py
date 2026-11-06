@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import random
 from collections.abc import Callable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -24,6 +25,12 @@ T = TypeVar("T")
 DEFAULT_EXCEPTIONS: tuple[type[Exception], ...] = (TimeoutError, RuntimeError)
 
 _MAX_WAIT_SEC = 120.0
+# 429 无 Retry-After 头时的退避参数：下限/上限/抖动比例
+# min=30s：Qwen3-8B 免费层疑似 RPM≈1（60s 窗口），10s 退避仍在窗口内必 429；
+# 30s × 3 次重试覆盖 90s，确保跨过限流窗口
+_RATE_LIMIT_MIN_WAIT = 30.0
+_RATE_LIMIT_MAX_WAIT = 120.0
+_RATE_LIMIT_JITTER = 0.3
 
 
 def _retry_after_seconds(exc: BaseException) -> float | None:
@@ -67,6 +74,14 @@ def _wait(retry_state) -> float:
         if after is not None:
             logger.warning("[retry] 命中 429，按 Retry-After 等待 {:.0f}s", after)
             return after
+        # 429 但无 Retry-After 头：用更长的退避 + 抖动，避免多任务同步重试再次打满限流
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            base = wait_exponential(
+                multiplier=2, min=_RATE_LIMIT_MIN_WAIT, max=_RATE_LIMIT_MAX_WAIT,
+            )(retry_state)
+            jitter = random.uniform(0, base * _RATE_LIMIT_JITTER)
+            logger.warning("[retry] 命中 429（无 Retry-After），退避 {:.1f}s + 抖动 {:.1f}s", base, jitter)
+            return base + jitter
     return wait_exponential(multiplier=1, min=2, max=30)(retry_state)
 
 

@@ -2,7 +2,7 @@
 
 对应 docs/06-env-vars.md 全部环境变量。禁止硬编码密钥。
 """
-import secrets
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./storage/db/app.db"
 
-    secret_key: str = secrets.token_urlsafe(32)
+    secret_key: str = "dev-only-secret-key-set-SECRET_KEY-in-prod"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 480
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
@@ -55,10 +55,11 @@ class Settings(BaseSettings):
     # 单次投喂的最大转写字符数，超出后按时间窗口分段做 map-reduce（docs/00:129）
     siliconflow_max_input_chars: int = 12000
     # 并发：三个子任务并行度 / 单个子任务内分段 map 并行度 / 全局在飞请求上限
-    # （任务并行 × 分段并行会放大在飞请求数，max_concurrency 是最终闸门，防止打满对端限流）
-    siliconflow_llm_task_workers: int = 3
-    siliconflow_llm_workers: int = 3
-    siliconflow_llm_max_concurrency: int = 6
+    # 全部设 1：等价串行，规避 Qwen3-8B 免费层限流（并行 9 请求触发 429）；
+    # map_ordered/workers=1 退化为 for 循环，ThreadPoolExecutor/max_workers=1 等价串行
+    siliconflow_llm_task_workers: int = 1
+    siliconflow_llm_workers: int = 1
+    siliconflow_llm_max_concurrency: int = 1
     # 硅基流动 HTTP 连接池（LLM 与 ASR 共用，keep-alive 连接复用，省掉重复 TCP/TLS 握手）
     siliconflow_http_max_connections: int = 20
     siliconflow_http_max_keepalive: int = 10

@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import secrets
 import time
@@ -992,6 +993,10 @@ async def get_stream_map(cookies: dict, course_sched_id: int, user_id: int) -> d
         return data["res"]["streamMap"]
 
 
+_meta_cache: dict[str, tuple[float, dict]] = {}
+_META_TTL = 300  # 5 分钟
+
+
 async def fetch_course_meta(platform_course_id: str | None) -> dict:
     """供 pipeline/steps/metadata.py 调用：返回课程元数据与三路流。
 
@@ -1001,6 +1006,11 @@ async def fetch_course_meta(platform_course_id: str | None) -> dict:
     if not platform_course_id or not settings.platform_base_url:
         return {}
 
+    now = time.time()
+    cached = _meta_cache.get(platform_course_id)
+    if cached and now - cached[0] < _META_TTL:
+        return cached[1]
+
     cookies, user_id = await cas_login()
     cookie_dict = _cookies_to_dict(cookies)
     courses = await list_user_courses(cookie_dict)
@@ -1009,17 +1019,22 @@ async def fetch_course_meta(platform_course_id: str | None) -> dict:
         raise ValueError(f"课程 cId={platform_course_id} 不在用户课程列表中")
 
     replays = await list_replay_courses(cookie_dict, target["cId"])
-    result = []
-    for r in replays:
-        stream_map = await get_stream_map(cookie_dict, r["id"], user_id)
-        result.append({"replay": r, "stream_map": stream_map})
+    tasks = [get_stream_map(cookie_dict, r["id"], user_id) for r in replays]
+    stream_maps = await asyncio.gather(*tasks, return_exceptions=True)
+    result = [
+        {"replay": r, "stream_map": sm}
+        for r, sm in zip(replays, stream_maps)
+        if not isinstance(sm, Exception)
+    ]
 
-    return {
+    meta = {
         "cookies": cookie_dict,
         "user_id": user_id,
         "course": target,
         "replays": result,
     }
+    _meta_cache[platform_course_id] = (now, meta)
+    return meta
 
 
 async def list_keypoints(cookies: dict, rp_id: str) -> list[dict]:

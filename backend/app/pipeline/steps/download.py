@@ -6,6 +6,7 @@ from pathlib import Path
 from loguru import logger
 
 from app.config import settings
+from app.pipeline.errors import StepError
 from app.pipeline.retry import with_retry
 
 _MIN_FREE_BYTES = 5 * 1024**3  # 下载前至少预留 5GB 可用空间
@@ -126,6 +127,8 @@ def download_audio_from_url(url: str, task_id: int, progress_callback=None) -> s
                     if progress_callback:
                         try:
                             progress_callback(out_time, speed, total_size)
+                        except StepError:
+                            raise
                         except Exception:  # noqa: BLE001
                             pass
                     last_log = now

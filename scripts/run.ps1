@@ -296,15 +296,13 @@ if ($Docker) {
     if (Test-Path $frontendLog) { Clear-Content $frontendLog }
 
     Write-Step "1/2" "启动后端（后台静默）..."
-    $backendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "uv run python run.py 2>&1" `
-        -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $backendLog
+    $backendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "uv run python run.py > `"$backendLog`" 2>&1" `
+        -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
     Write-Ok "后端 PID=$($backendProc.Id) (http://localhost:8000)"
 
     Write-Step "2/2" "启动前端（后台静默）..."
-    $frontendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "npm run dev 2>&1" `
-        -WorkingDirectory $frontendDir -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $frontendLog
+    $frontendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "npm run dev > `"$frontendLog`" 2>&1" `
+        -WorkingDirectory $frontendDir -WindowStyle Hidden -PassThru
     Write-Ok "前端 PID=$($frontendProc.Id) (http://localhost:5173)"
 
     Write-Host ""
