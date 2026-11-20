@@ -1,6 +1,6 @@
 """视频/音频缓存自动清理策略。
 
-对应 docs/05-risk-handling.md 资源清理；docs/04-data-flow.md 缓存清理。
+对应 docs/06-risk-handling.md 资源清理；docs/05-data-flow.md 缓存清理。
 """
 import time
 from pathlib import Path

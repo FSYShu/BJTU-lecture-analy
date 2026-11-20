@@ -1,6 +1,6 @@
 """依赖注入：当前用户、课程级权限校验。
 
-对应 docs/05-risk-handling.md 权限鉴权拦截；NFR-07。
+对应 docs/06-risk-handling.md 权限鉴权拦截；NFR-07。
 """
 from fastapi import Depends, Header
 from sqlalchemy import select

@@ -1,4 +1,4 @@
-"""重点时间点表。对应 docs/03-data-model.md §6，FR-04。"""
+"""重点时间点表。对应 docs/04-data-model.md §6，FR-04。"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func

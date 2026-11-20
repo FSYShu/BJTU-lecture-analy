@@ -1,6 +1,6 @@
 """硅基流动 ASR 客户端（XingChenASR）。音频 → 句级时间戳转写。
 
-对应 docs/09-mvp-implementation-plan.md A1、docs/05-risk-handling.md API 异常降级。
+对应 docs/10-mvp-implementation-plan.md A1、docs/06-risk-handling.md API 异常降级。
 
 设计要点：
 - 与 LLM 共用 ``SILICONFLOW_API_KEY`` / ``SILICONFLOW_BASE_URL``，Bearer Token 鉴权；

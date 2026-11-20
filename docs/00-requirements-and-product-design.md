@@ -1,4 +1,4 @@
-# 交大课录智析 · 需求分析和产品设计文档
+# 00 · 交大课录智析 · 需求分析和产品设计文档
 
 # 项目背景与业务问题
 
@@ -64,6 +64,9 @@
 |FR\-10|个人笔记与书签|收藏视频时间点并记录个人笔记。|P1|
 |FR\-11|字幕与导图导出|导出 SRT/VTT 字幕文件及 Markdown/图片格式思维导图。|P1|
 |FR\-12|复习题生成|根据课程内容生成复习思考题，经教师确认后发布，不与正式成绩联动。|P1|
+|FR\-20|课件页查看|从回放中的屏幕/课件流提取每页课件画面，按页序号与出现时间展示；点击课件页跳转视频对应位置，并可切换浏览本节全部课件页。|P0|
+|FR\-21|课堂习题查看|将每页课件与对应时段转写文本交叉比对，提炼课堂例题与习题，展示题干、选项与答案要点，并支持跳转至对应课件页与视频位置。|P0|
+|FR\-23|课程智能问答|就当前课程提问，系统检索本节转写内容作答，必要时结合联网检索的公开知识补充；回答须标注所依据的转写时间点并可跳转视频位置，超出课程范围的内容需说明来源。|P0|
 
 ### 教师/管理员端功能需求
 
@@ -81,6 +84,7 @@
 |FR\-17|回放列表读取|读取已授权课程回放列表，获取课程元数据与视频地址。|P0|
 |FR\-18|批量视频拉取|自动下载视频并提取音频，全程无需人工干预。|P0|
 |FR\-19|格式兼容|支持 MP4、FLV、HLS 等主流回放格式。|P0|
+|FR\-22|课件流读取|读取回放中的屏幕/课件流地址（如 vgaStreamHlsUrl），用于按页提取课件画面并定位课堂习题。|P0|
 
 ## 非功能需求
 
@@ -127,13 +131,15 @@
 |2|后台下载视频、提取音频并进行降噪预处理。|可供识别的人声音频|
 |3|ASR 服务生成带时间戳的转写文本和同步字幕。|转写与字幕文件|
 |4|大模型按文本分段，生成重点、课程概览、章节要点和基础思维导图。|结构化解析结果|
-|5|学生在播放器中查看结果，并通过重点、字幕或导图节点跳转。|可检索和可定位的回放体验|
+|5|从回放中的屏幕/课件流按页提取课件画面，并与每页对应时段的转写交叉比对，提炼课堂例题与习题。|课件页图像与课堂习题列表|
+|6|学生在播放器中查看结果，并通过重点、字幕、导图节点或课件页跳转。|可检索和可定位的回放体验|
+|7|学生就本节课程提问，系统检索转写片段并结合联网知识作答，回答标注依据的转写时间点。|带引用跳转的问答结果|
 
 ### 范围内能力
 
 - 课程回放列表读取、单条视频导入、视频地址解析、下载状态和失败重试。
 
-- 音频提取、基础降噪、硅基流动 ASR 调用、句级时间戳和字幕展示。
+- 音频提取、基础降噪、讯飞 ASR 调用、句级时间戳和字幕展示。
 
 - 核心概念、定义、公式、例题和考点等重点类型的识别与时间点标注。
 
@@ -157,6 +163,16 @@
 
 - 首版即覆盖所有课程平台、所有流媒体协议和所有教务系统接口。
 
+### 本期新增能力（2026\-11\-14，P0）
+
+- **课件页提取与查看**：回放除画面与人声外含独立的屏幕/课件流，按版面变化切分每页画面，生成按页浏览的课件列表，含页序号与该页出现时间；点击任意课件页跳转到视频对应位置。
+
+- **课堂习题提炼与查看**：将每页课件与该页对应时段的转写文本交叉比对，识别课堂例题、练习题及其答案要点，展示题干与选项，并支持跳转到对应课件页与视频位置。
+
+- **课程智能问答**：学生用自然语言就本节课程提问，系统先检索本节转写片段作答，必要时结合联网检索补充公开知识；回答标注所依据的转写时间点并支持点击跳转，课程未涉及的内容明确说明、不编造。问答仅限本节课程范围，不做跨课程知识库与学习路径规划。
+
+- **范围外补充（明确不做）**：课件与习题的在线作答、自动判分、成绩归档与正式成绩联动均不在首版范围；课件原文的完整 OCR 校对与可编辑也不在首版范围。
+
 ## 功能优先级
 
 ### P0 必须完成
@@ -172,6 +188,9 @@
 |P0\-07|课程播放器|播放、暂停、拖动、倍速、音量、全屏和最近进度；与字幕和解析结果同步。|主流桌面浏览器可完成完整回看流程。|
 |P0\-08|结果与异常管理|缓存解析结果；保留原始记录；提供接口超时、格式错误和任务失败提示。|刷新页面不丢失已完成结果；失败任务不影响其他课程。|
 |P0\-09|基础权限|登录、课程级访问控制和授权校验。|未授权用户无法查看视频、转写和解析结果。|
+|P0\-10|课件页查看|从屏幕/课件流按页提取课件画面；按页序号与出现时间展示；点击课件页跳转对应视频位置。|课件页与视频画面一致；页序与时间顺序正确；跳转偏差不超过两秒；课件流不可用时给出提示。|
+|P0\-11|课堂习题查看|课件页与对应时段转写交叉比对，提炼课堂例题与习题；展示题干、选项与答案要点；可跳转课件页与视频位置。|每道习题可追溯至课件页与时间点；题干与课件内容一致；不生成课程中未出现的题目；识别不完整时标注缺失。|
+|P0\-12|课程智能问答|限本节课程范围提问；基于转写检索作答，可联网补充公开知识；回答附转写时间点引用与跳转；支持多轮追问与清空会话。|回答有依据且可跳转；引用时间点与视频内容一致；无依据时明确说明而不编造；联网失败降级为仅基于转写的回答；不混入其他课程内容。|
 
 ### P1 首版后的增强功能
 
@@ -190,9 +209,9 @@
 
 ## 页面结构总览
 
-![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MWJmZDIzMDQ1YWZmNDFiM2M3ZjM1ZWZiNGRmYzc1YjdfYTVmNjQzYmY4OTNiYThkMzllMzUyYWM1YjliMWM4MGFfSUQ6NzY5NDMxMjg2NTI3MjA1Njc2Ml8xNzkxNTMyMTI2OjE3OTE2MTg1MjZfVjM)
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NGQyZWEzYjVhYWQ0NzU3YjZjNmJjNzRlYmQ2ZWRhNGRfOTViN2Q5YzQ5YWFjMjZlZTRjNWEyOTFlMWY1OTA2YTBfSUQ6NzY5NDMxMjg2NTI3MjA1Njc2Ml8xNzk1MDcwNDIzOjE3OTUxNTY4MjNfVjM)
 
-![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=YTM4MTM3NTg0ODVhYzdjMWUyYWJkYTgxODliNThiYjlfODIwYzI3NjhiOTNmNjQ3N2UwOGIyMDM4Y2RjZjgwOTlfSUQ6NzY5NDMxMjk4OTgwNTAyMjQ5MV8xNzkxNTMyMTI2OjE3OTE2MTg1MjZfVjM)
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MDczZmZlMGE5ODRiZjc2MzE5NjJmOTQ5MDk0YTVlMTNfZjUzY2MxYmMwYzZhMGYyNDg0YjRiNjY0ZWIxOTlhOWNfSUQ6NzY5NDMxMjk4OTgwNTAyMjQ5MV8xNzk1MDcwNDIzOjE3OTUxNTY4MjNfVjM)
 
 ## 核心交互流程说明
 
@@ -340,6 +359,61 @@
 |AC\-08\-03|导出内容与当前选中课程对应，可保存至本地。|
 |AC\-08\-04|资料未生成或生成失败时提示不可用，不得生成空白或无效文件。|
 
+## US\-09：课件页查看（P0）
+
+**用户故事描述**
+
+复习时我最想看老师讲的那页课件，但视频里课件一闪而过，想找某一页只能反复拖动进度条，还经常拖不准。如果能把整节课的课件按页列出来，点一下就回到老师讲到这一页的位置，复习会高效很多。
+
+**验收标准**
+
+|编号|验收标准|
+|---|---|
+|AC\-09\-01|解析完成后，系统能够从回放中的屏幕/课件流按页提取本节课件画面，并生成可按页浏览的课件列表。|
+|AC\-09\-02|每页课件包含页序号、画面图像与该页出现的时间点，且时间点位于视频有效时长范围内。|
+|AC\-09\-03|课件页按页序与时间顺序排列，页面不重复，明显的换页不遗漏。|
+|AC\-09\-04|学生点击某页课件时，播放器跳转至该页出现的时间位置。|
+|AC\-09\-05|学生切换课件页时，页面高亮状态与播放位置同步更新。|
+|AC\-09\-06|课件页画面与该时间点的视频画面一致，抽查页面上的文字或图示可对应。|
+|AC\-09\-07|课件流不可获取或未提取到有效页面时，展示明确提示，不展示空白页或其他课程的课件。|
+
+## US\-10：课堂习题查看（P0）
+
+**用户故事描述**
+
+老师课上讲的例题通常直接写在课件上，视频里题目一闪而过，解题过程又常常只有口述，事后很难还原。如果系统能把每页课件和老师讲这一页的内容对上，把这节课出现过的例题和习题整理出来，还能跳回原处看讲解，我复习时就不用反复听整段录音了。
+
+**验收标准**
+
+|编号|验收标准|
+|---|---|
+|AC\-10\-01|课件页与该页对应时段的转写文本完成后，系统能够提炼本节课堂例题与习题。|
+|AC\-10\-02|每道习题包含题干、所属课件页与视频时间点；课件或讲解中存在选项、答案要点时一并展示。|
+|AC\-10\-03|习题按视频时间顺序排列，时间点均位于有效时长范围内。|
+|AC\-10\-04|学生点击某道习题时，播放器跳转至该题讲解时间点，并定位到对应课件页。|
+|AC\-10\-05|习题内容可追溯至来源课件页与转写片段，不得生成课程中未出现的新题目。|
+|AC\-10\-06|未识别到有效习题时，展示“暂无可用习题”类提示，不展示无效或占位题目。|
+|AC\-10\-07|识别不完整的习题（如仅有题干、答案要点缺失）需明确标注缺失项，不得伪造完整答案。|
+
+## US\-11：课程智能问答（P0）
+
+**用户故事描述**
+
+复习时我经常产生具体疑问，比如“这个公式为什么成立”“老师提到的定理在哪一段讲过”，但回放本身无法回答，只能反复拖动进度条自己找。我希望可以直接用一句话提问，系统基于本节课的讲解内容给出答案，并告诉我依据在视频的哪一段；当课程里确实没讲时，也能明确说明，而不是编一个答案。
+
+**验收标准**
+
+|编号|验收标准|
+|---|---|
+|AC\-11\-01|学生可在课程详情页进入问答入口，就当前课程提出自然语言问题，系统返回与该问题相关的回答。|
+|AC\-11\-02|回答优先依据本节课程的转写内容生成，不得混入其他课程或未授权课程的内容。|
+|AC\-11\-03|回答须标注所依据的转写时间点，便于学生核对原文。|
+|AC\-11\-04|学生点击引用时间点后，播放器跳转至对应位置，偏差原则上不超过 2 秒。|
+|AC\-11\-05|当本节转写不足以回答时，系统可调用联网检索补充公开知识，并在回答中把该部分标注为“联网补充”。|
+|AC\-11\-06|当转写与联网检索均无法支撑回答时，系统应明确说明“本节课程未涉及”，不得编造答案或伪造引用。|
+|AC\-11\-07|联网检索不可用或超时时，系统降级为仅基于本节转写的回答，并提示当前未联网。|
+|AC\-11\-08|支持多轮追问，追问沿用当前会话上下文；切换课程或新建会话后，不得沿用上一节课程的上下文。|
+
 # 项目计划、人员分工与风险预估
 
 ## 项目阶段计划
@@ -362,11 +436,11 @@
 
 |**姓名**|**角色**|**负责内容**|
 |---|---|---|
-|FSYShu|项目经理|负责项目计划制定与进度跟踪、任务分工与人员协调、里程碑评审组织、风险识别与应对、项目交付与验收。|
-|wcj-1-a|需求分析师|负责用户需求调研与业务分析、用户故事与验收标准编写、需求变更管理。|
-|ninanina0611|后端开发工程师|负责系统后端架构与接口开发、课程平台对接与视频获取、解析任务调度与数据存储、学习资料导出服务。|
-|st1ngr4y71|前端开发工程师|负责系统前端页面开发、课程列表与视频播放器集成、字幕与思维导图展示、交互设计与体验优化。|
-|kylin777618|AI 算法工程师|负责语音识别与转写、视频智能解析、课程重点时间点标注、课程总结与思维导图生成、字幕生成与术语校正的算法实现。|
+|刁博文|项目经理|负责项目计划制定与进度跟踪、任务分工与人员协调、里程碑评审组织、风险识别与应对、项目交付与验收。|
+|吴宸杰|需求分析师|负责用户需求调研与业务分析、用户故事与验收标准编写、需求变更管理。|
+|李东礼|后端开发工程师|负责系统后端架构与接口开发、课程平台对接与视频获取、解析任务调度与数据存储、学习资料导出服务。|
+|贾宇辰|前端开发工程师|负责系统前端页面开发、课程列表与视频播放器集成、字幕与思维导图展示、交互设计与体验优化。|
+|杨森|AI 算法工程师|负责语音识别与转写、视频智能解析、课程重点时间点标注、课程总结与思维导图生成、字幕生成与术语校正的算法实现。|
 
 ## 风险预估与应对措施
 
@@ -383,13 +457,13 @@
 
 ## 调研记录
 
-![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NTMzYzFlZTYzOTg5OTcwZGExMTRkZjcwMjQ0YTQ5NzJfYzY5NTA0MGYzNmYxODE5NWU1YjdhZDg4MTAxOWIyMmRfSUQ6NzY5NDI5Nzk3NzMwOTA1NTk1Ml8xNzkxNTMyMTI2OjE3OTE2MTg1MjZfVjM)
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=MmY3YjM4ZDZmOTFmNGEwZWQyZjQxNjRmZmM4MjMwNjlfYTYzOWY4NjdhMTlkNDE5OWE2MGZjNDcyOGZiZmM2Y2JfSUQ6NzY5NDI5Nzk3NzMwOTA1NTk1Ml8xNzk1MDcwNDIzOjE3OTUxNTY4MjNfVjM)
 
-![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZTUzZjA2NDdhYzc2NDJlMjRiODRiYzlmNzk4ODQ5NDJfMDUxNTdmM2M3OWI3ZTU3ZTFkZGNkNGMzYTJkYzcyYWNfSUQ6NzY5NDI5Nzk3NTYzMTQ5ODQzM18xNzkxNTMyMTI2OjE3OTE2MTg1MjZfVjM)
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZDMwMDJiMzNjMDU0YjdmYTgyMzY1ZWVjYmIzZjZjNDVfMzkyMzAzMGY3ZWJhYjBlNTljMWUyMTA0MzM4YjVlMDhfSUQ6NzY5NDI5Nzk3NTYzMTQ5ODQzM18xNzk1MDcwNDIzOjE3OTUxNTY4MjNfVjM)
 
-![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZDMxM2FmZjgzNjgxZDkxNjhiNGE1YzU3YWEyODBmYzJfNzhiODNkYzEzMzcyMDgxYzVhZjAzMmU1MDEwODhlNjlfSUQ6NzY5NDI5Nzk3NDg3NjYyMTc5M18xNzkxNTMyMTI2OjE3OTE2MTg1MjZfVjM)
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZTM1NjhjYjVhOGUyNTA1OTU3NzNiYmVlMWQ5Mjg4OWNfN2VmYTNjNjRhOWY1YzQ4Y2UyMDBmNGIzNmRkMTZiZDlfSUQ6NzY5NDI5Nzk3NDg3NjYyMTc5M18xNzk1MDcwNDIzOjE3OTUxNTY4MjNfVjM)
 
-![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=NDU0NDY0MDJmYWIxMjIyZjNkNmU1YmU5ZDcwNjJjNzNfOTI5NDNhMmQyMDRmNGNhMDdkMmQ4MGVjZTYxMWZkNjVfSUQ6NzY5NDI5Nzk3Nzc0NTM5NDYyOF8xNzkxNTMyMTI2OjE3OTE2MTg1MjZfVjM)
+![Image](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZWRkOThkYmNiMWZkMzEwNTE1MjU2N2I0ODQ4OTRlNjhfMmRhMzI5ZTcxN2I1NzY0OGU3ZDcyZDY1NDUxMjJhNGZfSUQ6NzY5NDI5Nzk3Nzc0NTM5NDYyOF8xNzk1MDcwNDIzOjE3OTUxNTY4MjNfVjM)
 
 **调研小结**
 
@@ -410,13 +484,20 @@
 |同步字幕|与视频时间轴对齐显示的 AI 生成字幕，支持术语校正。|
 |思维导图|基于课程内容自动生成的结构化知识图谱。|
 |课程总结|分层级提炼的课程概览、章节要点与复习提示。|
+|课件页|从回放的屏幕/课件流中按版面变化切分出的单页课件画面，含页序号、出现时间与对应视频时间点。|
+|课堂习题|由课件页与对应时段转写交叉比对提炼出的课堂例题或练习题，含题干、选项与答案要点。|
 |上线验收门槛|产品发布前必须达到的关键指标与阻断条件。|
 |试点用户|参与早期试用并提供反馈的真实学生用户。|
+|智能问答|学生以自然语言就当前课程提问，系统基于本节转写（必要时结合联网检索）生成回答，并标注所依据的转写时间点的功能。|
+|检索增强|先从课程转写中检索与问题相关的片段，再交由大模型生成回答的方式，用于降低幻觉并使回答可回溯。|
+|联网检索|课程内容不足以回答时调用外部搜索服务补充公开知识；其结果在回答中以“联网补充”显式区分，不与课程原文混淆。|
 
 ## 需求变更记录
 
 |**日期**|**变更项**|**变更内容**|**原因/影响**|
 |---|---|---|---|
 |2026\-10\-08|功能需求（P1）|新增 P1\-08 用户反馈与建议入口，支持学生边使用边提意见。|依据调研开放题反馈，补充产品迭代反馈通道。|
+|2026\-11\-14|功能需求（P0）|新增 FR\-20 课件页查看、FR\-21 课堂习题查看、FR\-22 课件流读取；新增 P0\-10、P0\-11 及 US\-09、US\-10 验收标准；术语表补充“课件页”“课堂习题”。|回放包含独立的屏幕/课件流，可据此提取每页课件，并与对应时段 ASR 文本交叉比对提炼课堂习题，直接补足“课件看不清、例题一闪而过”的复习痛点；纳入 MVP，需同步调整设计与第 9–15 周计划。|
+|2026\-11\-14|功能需求（P0）|新增 FR\-23 课程智能问答；新增 P0\-12 与 US\-11 验收标准；核心业务链路增加第 7 步；术语表补充“智能问答”“检索增强”“联网检索”。|学生复习时常需就课程内容追问，且仅靠转写无法覆盖背景知识；问答复用已生成的转写切片，增量成本低，纳入 MVP 需同步设计与排期。|
 
 > （注：部分内容由豆包工作 AI 生成）

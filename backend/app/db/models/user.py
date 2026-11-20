@@ -1,4 +1,4 @@
-"""用户表。对应 docs/03-data-model.md §1。"""
+"""用户表。对应 docs/04-data-model.md §1。"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text, func

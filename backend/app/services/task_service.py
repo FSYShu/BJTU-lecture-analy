@@ -7,7 +7,7 @@ from app.db.models.task import TASK_STATUSES
 
 
 def ensure_parse_ready(course: Course) -> None:
-    """建任务前的配置前置校验（docs/09 A4-2）。
+    """建任务前的配置前置校验（docs/10 A4-2）。
 
     缺凭证时立刻返回可读错误，而不是等流水线跑到 ASR/LLM 步骤才失败——
     那时任务已创建、视频可能已下载，浪费磁盘与时间。
@@ -41,7 +41,7 @@ def retry_task(db: Session, failed_task_id: int, user_id: int) -> ParseTask:
     """失败任务重试：新建任务并指向父任务，同时带上已下载的视频/音频缓存。
 
     缓存路径带到新任务后，``orchestrator`` 会跳过 Step 2/3，
-    并复用父任务已落库的解析结果，避免重复消耗 ASR/LLM 额度（docs/04:115）。
+    并复用父任务已落库的解析结果，避免重复消耗 ASR/LLM 额度（docs/05:115）。
     """
     original = db.get(ParseTask, failed_task_id)
     if not original or original.status != "failed":
@@ -86,7 +86,7 @@ def get_latest_task_by_lecture(db: Session, lecture_id: int) -> ParseTask | None
 def update_status(db: Session, task_id: int, status: str, progress: int | None = None, current_step: str | None = None) -> None:
     """更新任务状态机。
 
-    状态取值必须落在 ``TASK_STATUSES``（docs/03:76）；非法值只告警、不落库，
+    状态取值必须落在 ``TASK_STATUSES``（docs/04:76）；非法值只告警、不落库，
     避免状态机出现文档之外的值导致前端无法匹配进度展示。
     """
     if status not in TASK_STATUSES:

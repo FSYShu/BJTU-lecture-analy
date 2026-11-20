@@ -330,10 +330,10 @@ export default function CourseDetail() {
     <SeekContext.Provider value={seek}>
       <div className="space-y-6">
         <div className="flex items-center gap-4 min-w-0">
-          <Link to="/" className="text-gray-400 hover:text-gray-600 shrink-0">← 返回</Link>
+          <Link to="/" className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 shrink-0">← 返回</Link>
           <h1 className="text-2xl font-bold truncate">{course?.title ?? '课程详情'}</h1>
           {course && (
-            <span className="text-sm text-gray-500 shrink-0">
+            <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">
               {course.teacher_name} · {course.session_label}
             </span>
           )}
@@ -342,11 +342,11 @@ export default function CourseDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* 左侧：播放器 + 字幕 + 课程概览 */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="border border-gray-200 rounded-lg overflow-hidden bg-black">
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-black">
               <Player src={videoUrl} transcripts={transcripts} loading={loadingReplays || loadingStream !== null} initialTime={currentSec} onTimeUpdate={handleTimeUpdate} onSeekReady={(s) => setSeek(() => s)} />
             </div>
             {transcripts.length > 0 && (
-              <Subtitle transcripts={transcripts} currentSec={currentSec} onSeek={seek} />
+              <Subtitle transcripts={transcripts} currentSec={currentSec} />
             )}
             {summary && <SummaryView summary={summary} />}
           </div>
@@ -355,39 +355,39 @@ export default function CourseDetail() {
           <div className="space-y-4">
             {replays.length > 0 && (
               <div className="space-y-2">
-                <h2 className="text-sm font-semibold text-gray-500">回放列表</h2>
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">回放列表</h2>
                 <div className="space-y-1">
                   {replays.map((r) => (
                     <div
                       key={r.id}
-                      className={`w-full border rounded-lg px-3 py-2 transition-all text-left ${
-                        selectedReplayId === r.id
-                          ? 'border-primary-400 bg-primary-50'
-                          : 'border-gray-200 hover:shadow-md hover:border-primary-300'
-                      }`}
+className={`w-full border rounded-lg px-3 py-2 transition-all text-left ${
+                          selectedReplayId === r.id
+                            ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/40 dark:border-primary-500'
+                            : 'border-gray-200 dark:border-gray-700 dark:bg-gray-800 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-500'
+                        }`}
                     >
                       <button
                         onClick={() => handleSelectReplay(r)}
                         disabled={loadingStream !== null}
                         className="w-full text-left disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <div className="text-sm font-medium text-gray-800">
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
                           {r.teach_time_str || (r.class_begin_time?.split(' ')[0] ?? '—')}
                         </div>
-                        <div className="text-xs text-gray-400">
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
                           {r.course_between || ''}
                         </div>
-                        <div className="text-xs text-gray-400">
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
                           {r.class_room || ''}
                         </div>
                         {loadingStream === r.id && (
-                          <div className="text-xs text-primary-600 mt-1">加载视频中...</div>
+                          <div className="text-xs text-primary-600 dark:text-primary-400 mt-1">加载视频中...</div>
                         )}
                       </button>
                       {r.has_result && (
                         <button
                           onClick={() => enqueueParse(r)}
-                          className="mt-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                          className="mt-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
                         >
                           重新生成
                         </button>
@@ -398,9 +398,9 @@ export default function CourseDetail() {
               </div>
             )}
             {keypoints.length > 0 && (
-              <Keypoints keypoints={keypoints} currentSec={currentSec} onSeek={seek} />
+              <Keypoints keypoints={keypoints} currentSec={currentSec} />
             )}
-            {mindmap && <MindmapView mindmap={mindmap} onSeek={seek} />}
+            {mindmap && <MindmapView mindmap={mindmap} />}
           </div>
         </div>
 

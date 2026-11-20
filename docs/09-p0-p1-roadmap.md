@@ -1,4 +1,4 @@
-# 08 · P0 / P1 模块划分
+# 09 · P0 / P1 模块划分
 
 > 对应产出清单第 9 项。明确标记 P0（MVP 必须实现）与 P1（仅预留目录占位，MVP 不编码实现）。
 
@@ -23,7 +23,7 @@
 
 | 编号 | 功能 | 占位位置 |
 | --- | --- | --- |
-| P1-01 | 术语库与人工校正 | `backend/app/api/v1/p1/terms.py`、`review.py`、`services/p1/term_service.py`、`review_service.py`、`db/models/`（terms/transcript_revisions 表设计见 docs/03）|
+| P1-01 | 术语库与人工校正 | `backend/app/api/v1/p1/terms.py`、`review.py`、`services/p1/term_service.py`、`review_service.py`、`db/models/`（terms/transcript_revisions 表设计见 docs/04）|
 | P1-02 | 字幕导出（SRT/VTT）| `backend/app/api/v1/p1/exports.py`、`services/p1/export_service.py`、`frontend/src/components/p1/Export/` |
 | P1-03 | 导图导出（MD/图片）| 同 P1-02 |
 | P1-04 | 复习题生成 | `backend/app/api/v1/p1/quiz.py`、`services/p1/quiz_service.py`、`frontend/src/components/p1/Quiz/`、`pages/p1/QuizPage.tsx` |

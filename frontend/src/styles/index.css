@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* markmap 默认按浅色输出文字，暗色模式下统一改为浅色前景 */
+.dark .markmap text {
+  fill: #e5e7eb;
+}
+
+.dark .markmap foreignObject {
+  color: #e5e7eb;
+}

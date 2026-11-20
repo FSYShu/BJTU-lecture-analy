@@ -1,6 +1,6 @@
 """Step 1：拉取回放元数据，并预取平台字幕/知识点（A3）。
 
-对应 docs/04-data-flow.md Step 1 与 docs/10-platform-feasibility-analysis.md §11.1：
+对应 docs/05-data-flow.md Step 1 与 docs/01-platform-feasibility-analysis.md §11.1：
 
 - 修正原先的键名不匹配（``fetch_course_meta`` 返回 ``{"cookies","user_id","course","replays"}``），
   把课程标题/教师/课次/时长与教师流 HLS 地址写入 ``courses``；
@@ -133,7 +133,7 @@ def _apply_meta(course: Course, meta: dict, entry: dict) -> str | None:
 
 
 def _duration_seconds(payload: dict) -> float | None:
-    """按 docs/10:964-975：``classEndTime - classBeginTime``；兼容毫秒与 ``durationSec``。"""
+    """按 docs/01:964-975：``classEndTime - classBeginTime``；兼容毫秒与 ``durationSec``。"""
     for key in ("durationSec", "duration", "rpDuration"):
         value = payload.get(key)
         if isinstance(value, (int, float)) and value > 0:

@@ -1,4 +1,4 @@
-# 07 · 核心依赖示例
+# 08 · 核心依赖示例
 
 > 对应产出清单第 7 项。后端 `pyproject.toml`（uv 锁定）与前端 `package.json`（npm 锁定）关键依赖示例。实际文件见 `backend/pyproject.toml` 与 `frontend/package.json`。
 

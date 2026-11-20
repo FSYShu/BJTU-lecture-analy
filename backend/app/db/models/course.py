@@ -1,4 +1,4 @@
-"""课程表。对应 docs/03-data-model.md §2。"""
+"""课程表。对应 docs/04-data-model.md §2。"""
 from datetime import datetime
 
 from sqlalchemy import DateTime, Index, Integer, String, func
@@ -23,6 +23,6 @@ class Course(Base):
     course_num: Mapped[str | None] = mapped_column(String(32))
     fz_id: Mapped[str | None] = mapped_column(String(32))
     platform_c_id: Mapped[int | None] = mapped_column(Integer)
-    # 平台回放 id（rpId/videoId）：平台知识点 API 3 与字幕 API 6 的入参，见 docs/10:205-206
+    # 平台回放 id（rpId/videoId）：平台知识点 API 3 与字幕 API 6 的入参，见 docs/01:205-206
     platform_replay_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

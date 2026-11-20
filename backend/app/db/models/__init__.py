@@ -1,4 +1,4 @@
-"""ORM 模型聚合。对应 docs/03-data-model.md。"""
+"""ORM 模型聚合。对应 docs/04-data-model.md。"""
 from app.db.models.authorization import CourseAuthorization
 from app.db.models.course import Course
 from app.db.models.keypoint import Keypoint

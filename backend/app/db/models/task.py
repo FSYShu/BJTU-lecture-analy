@@ -1,4 +1,4 @@
-"""解析任务表。对应 docs/03-data-model.md §4，FR-07/14。"""
+"""解析任务表。对应 docs/04-data-model.md §4，FR-07/14。"""
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func

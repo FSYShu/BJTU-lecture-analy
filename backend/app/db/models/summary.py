@@ -1,4 +1,4 @@
-"""课程总结表。对应 docs/03-data-model.md §7，FR-05，分层。"""
+"""课程总结表。对应 docs/04-data-model.md §7，FR-05，分层。"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func

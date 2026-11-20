@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 import type { Keypoint } from '@/types';
 import { formatTime } from '@/utils/time';
 import Empty from '@/components/Empty';
+import { SeekContext } from '@/components/Player';
 
 interface KeypointsProps {
   keypoints: Keypoint[];
@@ -15,13 +16,14 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 const CATEGORY_STYLE: Record<string, string> = {
-  concept: 'bg-blue-50 text-blue-600',
-  formula: 'bg-purple-50 text-purple-600',
-  example: 'bg-green-50 text-green-600',
-  exam_point: 'bg-orange-50 text-orange-600',
+  concept: 'bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300',
+  formula: 'bg-purple-50 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300',
+  example: 'bg-green-50 text-green-600 dark:bg-green-900/40 dark:text-green-300',
+  exam_point: 'bg-orange-50 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300',
 };
 
 export default function Keypoints({ keypoints, currentSec, onSeek }: KeypointsProps) {
+  const seek = useContext(SeekContext) ?? onSeek;
   // 接口按 timestamp_sec 升序返回，取最后一条「已经开始讲」的即当前重点
   const activeId = useMemo(() => {
     if (currentSec === undefined) return null;
@@ -33,8 +35,8 @@ export default function Keypoints({ keypoints, currentSec, onSeek }: KeypointsPr
   }, [keypoints, currentSec]);
 
   return (
-    <div className="border border-gray-200 rounded-lg">
-      <div className="px-4 py-2 border-b text-sm font-medium">重点列表</div>
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+      <div className="px-4 py-2 border-b dark:border-gray-700 text-sm font-medium">重点列表</div>
       <div className="h-64 overflow-y-auto">
         {keypoints.length === 0 ? (
           <Empty text="暂无可用重点" />
@@ -42,9 +44,9 @@ export default function Keypoints({ keypoints, currentSec, onSeek }: KeypointsPr
           keypoints.map((k) => (
             <div
               key={k.id}
-              onClick={() => onSeek?.(k.timestamp_sec)}
-              className={`cursor-pointer py-2 px-4 border-b last:border-0 hover:bg-gray-50 ${
-                k.id === activeId ? 'bg-primary-50' : ''
+              onClick={() => seek?.(k.timestamp_sec)}
+              className={`cursor-pointer py-2 px-4 border-b dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 ${
+                k.id === activeId ? 'bg-primary-50 dark:bg-primary-900/40' : ''
               }`}
             >
               <div className="flex items-center gap-2 flex-wrap">
@@ -52,23 +54,23 @@ export default function Keypoints({ keypoints, currentSec, onSeek }: KeypointsPr
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSeek?.(k.timestamp_sec);
+                    seek?.(k.timestamp_sec);
                   }}
                   title={`跳转到 ${formatTime(k.timestamp_sec)}`}
                   aria-label={`跳转到 ${formatTime(k.timestamp_sec)}`}
-                  className="text-xs text-primary-600 font-medium rounded px-0.5 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
+                  className="text-xs text-primary-600 dark:text-primary-400 font-medium rounded px-0.5 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
                 >
                   {formatTime(k.timestamp_sec)}
                 </button>
                 {k.category && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${CATEGORY_STYLE[k.category] || 'bg-gray-100 text-gray-600'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${CATEGORY_STYLE[k.category] || 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                     {CATEGORY_LABEL[k.category] || k.category}
                   </span>
                 )}
-                <span className="font-medium text-gray-800">{k.title}</span>
-                {k.ai_generated && <span className="text-[10px] text-accent-500 bg-accent-50 px-1 rounded">AI</span>}
+                <span className="font-medium text-gray-800 dark:text-gray-100">{k.title}</span>
+                {k.ai_generated && <span className="text-[10px] text-accent-500 dark:text-accent-200 bg-accent-50 dark:bg-accent-700/30 px-1 rounded">AI</span>}
               </div>
-              {k.summary && <div className="text-sm text-gray-600 mt-1">{k.summary}</div>}
+              {k.summary && <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">{k.summary}</div>}
             </div>
           ))
         )}

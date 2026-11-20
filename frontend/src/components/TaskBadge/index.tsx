@@ -96,7 +96,7 @@ export default function TaskBadge() {
       {isFailed && (
         <button
           onClick={() => setTask(null)}
-          className="ml-1 w-5 h-5 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 text-xs"
+          className="ml-1 w-5 h-5 flex items-center justify-center rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs"
           aria-label="关闭"
         >
           ×
@@ -105,14 +105,14 @@ export default function TaskBadge() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-gray-200 bg-white/95 backdrop-blur-md shadow-lg z-50 p-4 space-y-3">
+          <div className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md shadow-lg z-50 p-4 space-y-3">
             <div className="flex items-center justify-between text-xs">
-              <span className={`font-medium ${isSucceeded ? 'text-success-600' : isFailed ? 'text-danger-600' : 'text-gray-700'}`}>
+              <span className={`font-medium ${isSucceeded ? 'text-success-600 dark:text-success-500' : isFailed ? 'text-danger-600 dark:text-danger-500' : 'text-gray-700 dark:text-gray-200'}`}>
                 {label}
               </span>
-              <span className="text-gray-400">{task.progress}%</span>
+              <span className="text-gray-400 dark:text-gray-500">{task.progress}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
               <div
                 className={`h-2 rounded-full transition-all duration-500 relative ${
                   isFailed ? 'bg-danger-500' : isSucceeded ? 'bg-success-500' : 'bg-primary-500'
@@ -125,15 +125,15 @@ export default function TaskBadge() {
               </div>
             </div>
             {detail && isActive && (
-              <div className="text-xs text-gray-500">{detail}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{detail}</div>
             )}
             {isFailed && task.error_message && (
-              <div className="text-xs text-danger-600">{task.error_message}</div>
+              <div className="text-xs text-danger-600 dark:text-danger-500">{task.error_message}</div>
             )}
             {isActive && (
               <button
                 onClick={handleCancel}
-                className="w-full text-xs py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                className="w-full text-xs py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 取消解析
               </button>

@@ -1,6 +1,6 @@
 """A3：平台字幕（VTT）与知识点（zsd）接入。
 
-对应 docs/10-platform-feasibility-analysis.md §11.1 与 docs/09-mvp-implementation-plan.md A3：
+对应 docs/01-platform-feasibility-analysis.md §11.1 与 docs/10-mvp-implementation-plan.md A3：
 
 - ``parse_vtt``：平台 API 6 的 WebVTT → 句级转写（``ai_generated=False``、``source_model='platform-vtt'``）；
 - ``vtt_coverage``：字幕覆盖时长占比，过低时回退 ASR 生成；
@@ -176,7 +176,7 @@ def map_zsd(zsd_items: list[dict], duration_sec: float | None = None) -> list[di
 
 
 def _infer_category(title: str) -> str:
-    """按内容把平台知识点归到 keypoints.category 枚举（docs/10:977「按内容归类」）。"""
+    """按内容把平台知识点归到 keypoints.category 枚举（docs/01:977「按内容归类」）。"""
     for category, keywords in _CATEGORY_KEYWORDS:
         if any(keyword in title for keyword in keywords):
             return category

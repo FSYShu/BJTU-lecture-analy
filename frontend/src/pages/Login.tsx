@@ -27,25 +27,25 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-start justify-center">
-      <div className="bg-white shadow-lg rounded-xl p-8 max-w-sm w-full mt-32 space-y-4">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-start justify-center">
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-8 max-w-sm w-full mt-32 space-y-4">
         <h2 className="text-2xl font-bold text-center">管理员登录</h2>
         <div className="space-y-2">
           <input
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+            className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
             placeholder="用户名"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
           <input
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+            className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
             type="password"
             placeholder="密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        {error && <div className="text-sm text-danger-600">{error}</div>}
+        {error && <div className="text-sm text-danger-600 dark:text-danger-500">{error}</div>}
         <button
           className={`w-full bg-primary-600 text-white rounded-md py-2.5 font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${loading ? 'animate-pulse' : ''}`}
           disabled={loading}

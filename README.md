@@ -33,7 +33,7 @@ BJTU-lecture-analy/
 └── README.md
 ```
 
-完整目录树与模块职责见 [`docs/02-directory-structure.md`](docs/02-directory-structure.md)。
+完整目录树与模块职责见 [`docs/03-directory-structure.md`](docs/03-directory-structure.md)。
 
 ## 快速启动
 
@@ -109,7 +109,7 @@ docker compose -f docker-compose.dev.yml up --build
 
 ## 环境变量说明
 
-完整清单见 [`.env.example`](.env.example) 与 [`docs/06-env-vars.md`](docs/06-env-vars.md)。关键项：
+完整清单见 [`.env.example`](.env.example) 与 [`docs/07-env-vars.md`](docs/07-env-vars.md)。关键项：
 
 - `SILICONFLOW_*`：硅基流动 API 凭证与模型选择（ASR + LLM 共用）
 - `PLATFORM_*`：北京交通大学课程平台对接（CAS 登录 + API 1/2/3/6，含 `PLATFORM_CAS_LOGIN_URL`/`PLATFORM_VIDEO_SERVER` 等；CAS 用户名/密码由前端登录页输入）
@@ -178,16 +178,20 @@ powershell scripts/run.ps1 -Docker    # Docker 模式（需 Docker Desktop）
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/01-architecture.md](docs/01-architecture.md) | 系统分层整体架构图（输入/处理/引擎/输出层）|
-| [docs/02-directory-structure.md](docs/02-directory-structure.md) | 完整目录树 + 模块职责 |
-| [docs/03-data-model.md](docs/03-data-model.md) | SQLite 表设计 |
-| [docs/04-data-flow.md](docs/04-data-flow.md) | 异步解析任务完整数据流 |
-| [docs/05-risk-handling.md](docs/05-risk-handling.md) | 风险对应的代码层面处理 |
-| [docs/06-env-vars.md](docs/06-env-vars.md) | 环境变量清单说明 |
-| [docs/07-dependencies.md](docs/07-dependencies.md) | pyproject.toml / package.json 依赖示例 |
-| [docs/08-p0-p1-roadmap.md](docs/08-p0-p1-roadmap.md) | P0/P1 模块划分 |
-| [docs/00-requirements-and-product-design.md](docs/00-requirements-and-product-design.md) | 原始需求文档 |
-| [docs/10-platform-feasibility-analysis.md](docs/10-platform-feasibility-analysis.md) | 北交大课程平台抓取可行性分析 |
+| [docs/00-requirements-and-product-design.md](docs/00-requirements-and-product-design.md) | 需求分析与产品设计 |
+| [docs/01-platform-feasibility-analysis.md](docs/01-platform-feasibility-analysis.md) | 北交大课程平台抓取可行性分析 |
+| [docs/02-architecture.md](docs/02-architecture.md) | 系统分层整体架构图（输入/处理/引擎/输出层）|
+| [docs/03-directory-structure.md](docs/03-directory-structure.md) | 完整目录树 + 模块职责 |
+| [docs/04-data-model.md](docs/04-data-model.md) | SQLite 表设计 |
+| [docs/05-data-flow.md](docs/05-data-flow.md) | 异步解析任务完整数据流 |
+| [docs/06-risk-handling.md](docs/06-risk-handling.md) | 风险对应的代码层面处理 |
+| [docs/07-env-vars.md](docs/07-env-vars.md) | 环境变量清单说明 |
+| [docs/08-dependencies.md](docs/08-dependencies.md) | pyproject.toml / package.json 依赖示例 |
+| [docs/09-p0-p1-roadmap.md](docs/09-p0-p1-roadmap.md) | P0/P1 模块划分 |
+| [docs/10-mvp-implementation-plan.md](docs/10-mvp-implementation-plan.md) | MVP 未实现内容、实现方案与完成状态 |
+| [docs/11-performance-optimization.md](docs/11-performance-optimization.md) | 全链路耗时与网络消耗优化 |
+| [docs/12-summary-and-detailed-design.md](docs/12-summary-and-detailed-design.md)                                                                            | 概要与详细设计文档             |
+| [docs/13-black-box-test-report.md](docs/13-black-box-test-report.md) | 核心功能黑盒测试报告 |
 
 ## 核心约束
 
