@@ -1,4 +1,4 @@
-# 北交大课程平台回放抓取 — 全流程可行性分析报告
+# 01 · 北交大课程平台回放抓取 — 全流程可行性分析报告
 
 > 探索日期: 2026-09-18  
 > 入口: `mis.bjtu.edu.cn`  
@@ -961,7 +961,7 @@ pipeline/steps/persist.py → 写入 transcripts/keypoints/summaries/mindmaps
 
 > 如需三路，分别对三个 HLS URL 调用 `download.py`；本项目 `TASK_MAX_CONCURRENT` 限制并发，避免 IP 被封（见 10.4 注意事项 6）。
 
-### 11.3 数据模型字段映射（对应 docs/03-data-model.md）
+### 11.3 数据模型字段映射（对应 docs/04-data-model.md）
 
 | 平台字段 | 本项目 `courses` 表字段 |
 |---------|------------------------|
@@ -1005,7 +1005,7 @@ uv run playwright install chromium   # 安装无头浏览器内核
 
 Playwright 仅用于 CAS 登录这一步，不引入 Selenium，避免重复依赖。
 
-### 11.6 风险与降级（对接 docs/05-risk-handling.md）
+### 11.6 风险与降级（对接 docs/06-risk-handling.md）
 
 | 平台侧风险 | 本项目处理 |
 |-----------|-----------|

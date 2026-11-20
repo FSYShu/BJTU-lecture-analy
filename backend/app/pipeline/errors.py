@@ -1,6 +1,6 @@
 """流水线异常：带固定错误码，写入 ``parse_tasks.error_code``。
 
-对应 docs/03-data-model.md:79 与 docs/04-data-flow.md 各步骤的错误码约定
+对应 docs/04-data-model.md:79 与 docs/05-data-flow.md 各步骤的错误码约定
 （``ASR_TIMEOUT`` / ``ASR_ERROR`` / ``LLM_TIMEOUT`` / ``LLM_ERROR`` / ``PERSIST_FAIL`` 等）。
 """
 from __future__ import annotations

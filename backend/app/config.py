@@ -1,6 +1,6 @@
 """应用配置加载。从 .env 读取，pydantic-settings 做类型校验。
 
-对应 docs/06-env-vars.md 全部环境变量。禁止硬编码密钥。
+对应 docs/07-env-vars.md 全部环境变量。禁止硬编码密钥。
 """
 
 from functools import lru_cache
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     task_total_timeout: int = 3600
     task_max_concurrent: int = 2
     timestamp_tolerance_sec: int = 2
-    # 平台 VTT 字幕覆盖时长占比达到该阈值时直接复用，不再调用 ASR（docs/10:948）
+    # 平台 VTT 字幕覆盖时长占比达到该阈值时直接复用，不再调用 ASR（docs/01:948）
     vtt_min_coverage: float = 0.5
 
     oss_access_key_id: str = ""

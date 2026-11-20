@@ -1,9 +1,11 @@
-import { createContext, useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 import type { Transcript } from '@/types';
 
-export const SeekContext = createContext<(t: number) => void>(() => {});
+export type SeekFn = (t: number) => void;
+
+export const SeekContext = createContext<SeekFn | null>(null);
 
 interface PlayerProps {
   src: string;
@@ -11,7 +13,8 @@ interface PlayerProps {
   loading?: boolean;
   initialTime?: number;
   onTimeUpdate?: (t: number) => void;
-  onSeekReady?: (seek: (t: number) => void) => void;
+  onSeekReady?: (seek: SeekFn) => void;
+  children?: ReactNode;
 }
 
 function secToVttTime(sec: number): string {
@@ -41,7 +44,7 @@ function transcriptsToVtt(transcripts: Transcript[]): string {
   return lines.join('\n');
 }
 
-export default function Player({ src, transcripts, loading, initialTime, onTimeUpdate, onSeekReady }: PlayerProps) {
+export default function Player({ src, transcripts, loading, initialTime, onTimeUpdate, onSeekReady, children }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<any>(null);
   const pendingSeekRef = useRef<number | null>(null);
@@ -169,18 +172,21 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
   }, [seek, onSeekReady]);
 
   return (
-    <div key={src} data-vjs-player style={{ minHeight: '360px', position: 'relative' }}>
-      <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
-      {!src && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-black">
-          {loading ? '加载视频中...' : '暂无视频'}
-        </div>
-      )}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 bg-black/80 z-10 p-4 text-center">
-          {error}
-        </div>
-      )}
-    </div>
+    <SeekContext.Provider value={seek}>
+      <div key={src} data-vjs-player style={{ minHeight: '360px', position: 'relative' }}>
+        <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
+        {!src && (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-black">
+            {loading ? '加载视频中...' : '暂无视频'}
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 bg-black/80 z-10 p-4 text-center">
+            {error}
+          </div>
+        )}
+      </div>
+      {children}
+    </SeekContext.Provider>
   );
 }

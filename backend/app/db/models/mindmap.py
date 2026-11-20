@@ -1,4 +1,4 @@
-"""思维导图表。对应 docs/03-data-model.md §8，FR-06，两级结构。"""
+"""思维导图表。对应 docs/04-data-model.md §8，FR-06，两级结构。"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func

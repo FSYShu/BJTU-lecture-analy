@@ -1,6 +1,6 @@
 """硅基流动大模型客户端。重点抽取 / 分层总结 / 两级思维导图（A2）。
 
-对应 docs/09-mvp-implementation-plan.md A2、docs/05-risk-handling.md 防幻觉与内容质量。
+对应 docs/10-mvp-implementation-plan.md A2、docs/06-risk-handling.md 防幻觉与内容质量。
 
 要点：
 - 仅基于传入转写文本生成，系统提示明确禁止引入外部知识（防幻觉）；
@@ -40,7 +40,7 @@ _REQUEST_SLOTS = threading.BoundedSemaphore(max(1, settings.siliconflow_llm_max_
 _DEDUPE_WINDOW_SEC = 30.0
 # 同名重点相隔超过该阈值时视为不同知识点（同一讲次里可能重复出现同名要点）
 _SAME_TITLE_WINDOW_SEC = 180.0
-# 长转写分段时相邻块的时间重叠窗口（秒），见 docs/09 A2-2
+# 长转写分段时相邻块的时间重叠窗口（秒），见 docs/10 A2-2
 _CHUNK_OVERLAP_SEC = 60.0
 
 _SYSTEM_PROMPT = (
@@ -169,7 +169,7 @@ def _loads(content: str) -> dict:
 def _split_chunks(transcript_text: str) -> list[str]:
     """按行（每行一句带时间戳的转写）切分成不超过上限的若干块。
 
-    相邻块保留 ``_CHUNK_OVERLAP_SEC`` 秒的**重叠区**（docs/09 A2-2：重叠 30–60 秒，
+    相邻块保留 ``_CHUNK_OVERLAP_SEC`` 秒的**重叠区**（docs/10 A2-2：重叠 30–60 秒，
     避免跨块知识被切断）；重叠导致重复产出的重点由 ``_dedupe_keypoints`` 合并。
     """
     limit = max(1000, settings.siliconflow_max_input_chars)
@@ -316,7 +316,7 @@ def _normalize_keypoints(raw: Any) -> list[dict]:
 
 
 def _normalize_category(value: Any) -> str:
-    """category 白名单校验；非法值归为 concept（docs/03:121）。"""
+    """category 白名单校验；非法值归为 concept（docs/04:121）。"""
     text = str(value or "").strip().lower()
     aliases = {
         "概念": "concept", "定义": "concept", "concept": "concept",

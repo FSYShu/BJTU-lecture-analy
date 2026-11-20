@@ -1,21 +1,23 @@
-# MVP 未实现内容与实现方案
+# 10 · MVP 未实现内容与实现方案
 
 > 基于当前项目骨架盘点，按前端、纯后端、AI 相关后端三类分类，给出每项的实现方案。
 
-## 完成状态总览（截至 2026-10-15）
+## 完成状态总览（截至 2026-11-19）
 
 | 分类 | 编号 | 任务 | 状态 | 备注 |
 |---|---|---|---|---|
-| 后端 | B1-B5 | 纯后端（CAS/编排/下载/音频/去重）| ✅ 全部已实现 | commit `ba2803d` |
-| AI | A0 | 骨架与接口契约 | ✅ 已就绪 | 重试/编排/持久化/查询 API 均已就绪 |
-| AI | A1 | 硅基流动 ASR API 调用 | ✅ 已实现 | `siliconflow_asr.py` 415 行：分片上传/多格式解析/时间戳校验/降级估算 |
-| AI | A2 | 硅基流动 LLM API 调用 | ✅ 已实现 | `siliconflow_llm.py` 507 行：_chat/_chat_json/长文本分段/结果规范化/溯源 |
-| AI | A3 | 平台字幕/知识点接入 | ✅ 已实现 | `metadata.py` 映射已修+rpId 落库；`platform_assets` VTT/zsd/对齐；orchestrator VTT 优先 |
-| AI | A4 | 校验/降级/测试 | ⚠️ 大部分已实现 | 429/超时/缓存复用/部分降级/固定错误码已落地；40 测试中 7 失败（ASR 分片 contextmanager 误用 + LLM 分段断言） |
+| 后端 | B1-B5 | 纯后端（CAS/编排/下载/音频/去重）| ✅ 全部已实现 | commit `ba2803d`；B1 主入口已改用 SSO（CAS 代码保留供回退） |
+| AI | A0 | 骨架与接口契约 | ✅ 已就绪 | 重试/编排/持久化/查询 API 均已就绪；任务状态已加 SSE 推送 |
+| AI | A1 | 硅基流动 ASR API 调用 | ✅ 已实现 | `siliconflow_asr.py` 501 行：生产者-消费者分片流式转写/多格式解析/时间戳校验/降级估算 |
+| AI | A2 | 硅基流动 LLM API 调用 | ✅ 已实现 | `siliconflow_llm.py` 636 行：_chat/_chat_json/长文本分段 map/结果规范化/溯源；三子任务与分段均并行 |
+| AI | A3 | 平台字幕/知识点接入 | ✅ 已实现 | `metadata.py` 映射已修+rpId 落库；`platform_assets.py` VTT/zsd/对齐已接入 orchestrator |
+| AI | A4 | 校验/降级/测试 | ⚠️ 主体已实现，pipeline 全绿 | 429/超时/并发/缓存续跑/部分降级/固定错误码/可观测性已落地；pipeline 40/40 通过（2026-11-19）；黑盒 8 失败对应 5 个 BUG（待修） |
 | AI | A5 | 不一致项统一 | ✅ 已统一 | config 改名/固定错误码(StepError)/重试续跑/映射修正/platform_replay_id |
-| 前端 | F1-F6 | 功能联调 | ⚠️ F1/F4/F5/F6 ✅，F2 部分，F3 未实现 | F2 SeekContext.Provider 无 useContext 消费；F3 Player 不接受 children，改用 onSeekReady 回调 |
-| 前端 | U0-U6 | 设计规范 | ⚠️ U0-U5 已实现，U6 待实现 | U6 暗色模式为 P1 低优先级 |
-| 前端 | — | typecheck | ✅ 通过 | `vite-env.d.ts` 已补齐；Mindmap onSeek 已接入 |
+| 前端 | F1-F6 | 功能联调 | ✅ 全部已实现 | 2026-11-19 修复 F2/F3：Subtitle/Keypoints/Mindmap 改用 `useContext(SeekContext)`，Player 支持 children 并在内部包裹 Provider |
+| 前端 | U0-U6 | 设计规范 | ✅ 全部已实现 | 2026-11-19 补齐 U6：Tailwind `darkMode: 'class'`，Layout 主题切换，全站 `dark:` 变体 |
+| 前端 | — | typecheck | ✅ 通过 | 2026-11-19 实测 `tsc --noEmit` 无错误 |
+
+**测试实数（2026-11-19）**：后端 `pytest tests --ignore=tests/test_blackbox` → 59 passed（其中 pipeline 40/40）；前端 `tsc --noEmit` 与 `vite build` 均通过。黑盒 8 个用例失败，对应 `docs/13-black-box-test-report.md` 记录的 5 个 BUG（BUG-01~05，本次未修）。
 
 ---
 
@@ -83,7 +85,9 @@ useEffect(() => { getCourse(courseId).then(setCourse).catch(() => {}); }, [cours
 
 - **前置**：`api/courses.ts` 需补充 `getCourse(id)` 单条查询封装
 
-### F2：点击跳转不工作（onSeek 未传入） ⚠️ 部分实现（SeekContext.Provider 无 useContext 消费，靠 prop 传递）
+### F2：点击跳转不工作（onSeek 未传入） ✅ 已实现
+
+> 现状（2026-11-19）：Subtitle、Keypoints、Mindmap 均通过 `useContext(SeekContext)` 获取 `seek`（保留 `onSeek` prop 作为 Provider 外使用的回退）；CourseDetail 在外层用 `SeekContext.Provider` 包裹整页，并由 Player 的 `onSeekReady` 填充 `seek`。
 
 - **位置**：`frontend/src/pages/CourseDetail.tsx:31-36`
 - **现状**：Subtitle/Keypoints/Mindmap 组件均接受 `onSeek` prop，但 CourseDetail 未传入
@@ -101,7 +105,9 @@ const seek = useContext(SeekContext);
 <MindmapView mindmap={mindmap} onSeek={seek} />
 ```
 
-### F3：SeekContext.Provider 渲染空子节点 ❌ 未实现（Player 不接受 children，改用 onSeekReady 回调上抛）
+### F3：SeekContext.Provider 渲染空子节点 ✅ 已实现
+
+> 现状（2026-11-19）：`Player` 已接受 `children`，并在组件内部用 `SeekContext.Provider value={seek}` 包裹（渲染在播放器容器之后）；同时保留 `onSeekReady` 供页面外层 Provider 使用，两种用法都可消费同一个 `seek`。
 
 - **位置**：`frontend/src/components/Player/index.tsx:29`
 - **现状**：`<SeekContext.Provider value={seek}>{null}</SeekContext.Provider>`，子组件无法消费
@@ -170,7 +176,7 @@ const task = useTask(taskId);
 | U3 | 无加载/空状态/错误状态的统一组件 | 全局 | 中 | ✅ |
 | U4 | 无 toast/通知系统，`alert()` 原始弹窗 | `AdminAuth.tsx:11`、`CourseList.tsx` | 中 | ✅ |
 | U5 | 无响应式断点处理，小屏不可用 | 全局 | 低（MVP 桌面优先） | ✅ |
-| U6 | 无暗色模式 | 全局 | 低（P1） | ❌ |
+| U6 | 无暗色模式 | 全局 | 低（P1） | ✅（2026-11-19 已实现 class 暗色模式 + 主题切换） |
 
 ### 4.1 设计基础
 
@@ -771,6 +777,8 @@ const seek = useContext(SeekContext);
 
 ### B1：CAS 验证码处理 ✅ 已实现
 
+> 复核（2026-11-19）：CAS manual/ocr 两种模式均已实现；系统主入口已于 2026-10-22 改为 SSO（`POST /platform/sso-login`，无验证码、SM2 加密），CAS 代码保留供平台流水线回退。
+
 - **位置**：`backend/app/integrations/platform.py:56-58`
 - **现状**：manual 和 ocr 模式均为 `NotImplementedError`
 - **方案**：
@@ -894,7 +902,7 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 ## 三、AI 相关后端（4 项）
 
 > **本节修订说明**：原稿只有 A1（讯飞 ASR）、A2（硅基流动 LLM）两个函数级草图，缺少「现有代码契约、长文本分段、结果校验与规范化、平台字幕/知识点接入、失败降级与测试」等环节，且草图与当前代码签名不一致（`transcribe` 现为**同步**函数；LLM 客户端是**三个业务函数 + `_chat`**，并不存在 `generate_analysis`）。**A1 已变更为统一调用硅基流动 ASR（`XingChenAGI/XingChenASR-V3.2-Ultra`），不再使用讯飞。**
-> 本节依据 `docs/00`（FR-03/04/05/06、P0-03~P0-06、NFR-02/03/04/05/10、AC-02/03/04/05/06）、`docs/03`（四张结果表）、`docs/04`（Step 4/5/6 与状态机）、`docs/05`（异常降级与防幻觉）、`docs/10`（平台 API 3 知识点 / API 6 字幕）以及当前后端代码骨架重新补全为 4 项。
+> 本节依据 `docs/00`（FR-03/04/05/06、P0-03~P0-06、NFR-02/03/04/05/10、AC-02/03/04/05/06）、`docs/04`（四张结果表）、`docs/05`（Step 4/5/6 与状态机）、`docs/06`（异常降级与防幻觉）、`docs/01`（平台 API 3 知识点 / API 6 字幕）以及当前后端代码骨架重新补全为 4 项。
 
 ### A0：AI 步骤现有骨架与接口契约（动手前必读） ✅ 已就绪
 
@@ -910,7 +918,7 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 | 结果查询 API | `backend/app/api/v1/transcripts.py`、`keypoints.py`、`summaries.py`、`mindmaps.py` | 已实现，含 `require_course_access` 课程级鉴权 |
 | 平台数据源 | `backend/app/integrations/platform.py:275-285`（`list_keypoints`）、`:287-294`（`get_subtitle_vtt`） | 已实现，但**当前没有任何调用方**（A3 负责接入） |
 
-**待实现（即本节 A1~A4）**：
+**待实现（即本节 A1~A4）**（以下为改造前盘点，A1~A5 均已在 2026-10 落地，保留作历史记录）：
 
 | 环节 | 位置 | 现状 |
 | --- | --- | --- |
@@ -928,11 +936,11 @@ def import_from_platform(db: Session, platform_course_id: str, meta: dict) -> Co
 | 重点元素字段 | `title` / `category` / `summary` / `timestamp_sec` / `source_transcript_ids`（`persist.py:36-40`） |
 | 总结字段 | `overview` / `chapter_points` / `key_details` / `review_hints`（`persist.py:45-48`） |
 | 导图字段 | `root_topic` / `nodes`（`persist.py:54-55`），`nodes` 为两级结构 `[{module, knowledge_points:[{name, timestamp_sec}]}]` |
-| 枚举与范围约束 | `category ∈ {concept, formula, example, exam_point}`（`docs/03:121`）；`0 ≤ timestamp_sec ≤ duration_sec`（`docs/03:130`、AC-03-03）；`0 ≤ start_sec < end_sec ≤ duration_sec`（AC-06-02） |
-| 来源标识 | ASR：`source_model='siliconflow-asr'`、`ai_generated=True`（`persist.py:28`）；LLM：`ai_generated=True`、`source_model=settings.siliconflow_model`（`persist.py:39/49/56`）；平台数据：`ai_generated=False`（`docs/03:131`、`docs/10:977`） |
-| 任务状态 | `asr_running` / `llm_running` / `persisting`（`docs/03:76`、`docs/04:96-101`）由编排层写入，AI 客户端不要自行改任务状态 |
+| 枚举与范围约束 | `category ∈ {concept, formula, example, exam_point}`（`docs/04:121`）；`0 ≤ timestamp_sec ≤ duration_sec`（`docs/04:130`、AC-03-03）；`0 ≤ start_sec < end_sec ≤ duration_sec`（AC-06-02） |
+| 来源标识 | ASR：`source_model='siliconflow-asr'`、`ai_generated=True`（`persist.py:28`）；LLM：`ai_generated=True`、`source_model=settings.siliconflow_model`（`persist.py:39/49/56`）；平台数据：`ai_generated=False`（`docs/04:131`、`docs/01:977`） |
+| 任务状态 | `asr_running` / `llm_running` / `persisting`（`docs/04:76`、`docs/05:96-101`）由编排层写入，AI 客户端不要自行改任务状态 |
 
-**范围边界**：P1 的 AI 能力——术语库与术语校正（FR-15/P1-01，对应 AC-06-06 见 `docs/00:311`）、字幕与导图导出（FR-11/P1-02~03）、复习题生成（FR-12/P1-04）、课内关键词检索（FR-09/P1-05）——MVP 只预留目录、不编码（`docs/08:22-46`），本节不含其实现；需求中检索定义为**关键词检索**，不引入向量/embedding。
+**范围边界**：P1 的 AI 能力——术语库与术语校正（FR-15/P1-01，对应 AC-06-06 见 `docs/00:311`）、字幕与导图导出（FR-11/P1-02~03）、复习题生成（FR-12/P1-04）、课内关键词检索（FR-09/P1-05）——MVP 只预留目录、不编码（`docs/09:22-46`），本节不含其实现；需求中检索定义为**关键词检索**，不引入向量/embedding。
 
 ### A1：硅基流动 ASR API 调用 ✅ 已实现
 
@@ -1007,10 +1015,10 @@ text = "\n".join(f"[{t['start_sec']:.1f}] {t['text']}" for t in transcripts)
 
 | 规范化项 | 规则 | 依据 |
 | --- | --- | --- |
-| `category` | 必须落在 `KEYPOINT_CATEGORIES = ("concept","formula","example","exam_point")` 内（`db/models/keypoint.py:9`），非法值归为 `concept`；`category` 列在模型中可空且无 CHECK 约束（`keypoint.py:24`），校验只能放在代码里 | `docs/03:121` |
+| `category` | 必须落在 `KEYPOINT_CATEGORIES = ("concept","formula","example","exam_point")` 内（`db/models/keypoint.py:9`），非法值归为 `concept`；`category` 列在模型中可空且无 CHECK 约束（`keypoint.py:24`），校验只能放在代码里 | `docs/04:121` |
 | `timestamp_sec` | 缺失或越界时对齐到最接近的转写句 `start_sec`；仍无匹配则丢弃该条 | AC-03-03、AC-03-06 |
-| `source_transcript_ids` | **不要信任模型输出**：由本地用 `timestamp_sec` 匹配 ± `TIMESTAMP_TOLERANCE_SEC`（2s）内的转写句 id 生成 | `docs/03:126`、`docs/05:49` |
-| 思维导图结构 | 强制两级 `{root_topic, nodes:[{module, knowledge_points:[{name, timestamp_sec}]}]}`，多余层级拍平 | `docs/03:159`、AC-05-01/02 |
+| `source_transcript_ids` | **不要信任模型输出**：由本地用 `timestamp_sec` 匹配 ± `TIMESTAMP_TOLERANCE_SEC`（2s）内的转写句 id 生成 | `docs/04:126`、`docs/06:49` |
+| 思维导图结构 | 强制两级 `{root_topic, nodes:[{module, knowledge_points:[{name, timestamp_sec}]}]}`，多余层级拍平 | `docs/04:159`、AC-05-01/02 |
 | 空结果 | 允许返回空列表/空对象，前端按"暂无"提示展示；**不得**用其他课程内容或占位假数据填充 | AC-03-06、AC-04-07、AC-05-06 |
 
 **代码骨架**（保持现有三个函数契约，不再引入 `generate_analysis`）：
@@ -1051,7 +1059,7 @@ def _loads(content: str) -> dict:
 #   generate_mindmap  -> {"root_topic", "nodes"}
 ```
 
-**配置与一致性注意**：`config.py:43` 的默认模型是 `deepseek-ai/DeepSeek-V3`，而 `.env.example:54` 与 `docs/06:52` 写的是 `Qwen/Qwen3-8B`（`docs/01:25` 又写"DeepSeek/Qwen"、`docs/03:125` 以 `deepseek-v3` 作为 `source_model` 示例）。由于 `persist.py:39/49/56` 会把 `settings.siliconflow_model` 直接写进 `source_model`，**这四处口径必须先统一**，否则同一批数据的来源标识会不一致。
+**配置与一致性注意**：`config.py:43` 的默认模型是 `deepseek-ai/DeepSeek-V3`，而 `.env.example:54` 与 `docs/07:52` 写的是 `Qwen/Qwen3-8B`（`docs/02:25` 又写"DeepSeek/Qwen"、`docs/04:125` 以 `deepseek-v3` 作为 `source_model` 示例）。由于 `persist.py:39/49/56` 会把 `settings.siliconflow_model` 直接写进 `source_model`，**这四处口径必须先统一**，否则同一批数据的来源标识会不一致。
 
 **A2-6 并发、连接复用与提示词优化（P0 性能项）**
 
@@ -1066,24 +1074,24 @@ def _loads(content: str) -> dict:
 
 ### A3：平台字幕（VTT）与知识点（zsd）接入 ✅ 已实现
 
-- **位置**：`backend/app/integrations/platform.py:275-285`（`list_keypoints`，API 3）、`:287-294`（`get_subtitle_vtt`，API 6）——两者**已实现但全项目无调用方**；接入点在 `pipeline/steps/metadata.py`、Step 4 之前与 Step 5 之后
-- **依据**：`docs/10:947-948`（zsd 作为 LLM 重点的补充/校验来源，与 LLM 结果做时间点对齐校验，偏差 ≤ 2s；平台 VTT 可直接复用，作为 ASR 结果的补充/校验，无则走 ASR 生成）、`docs/10:977`（zsd 写入 keypoints：`timestamp_sec = zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`、`category` 按内容归类）、`docs/03:131`
+- **位置**：`backend/app/integrations/platform.py:275-285`（`list_keypoints`，API 3）、`:287-294`（`get_subtitle_vtt`，API 6）——两者已由 `pipeline/steps/platform_assets.py` 调用，并在 `metadata.py`（预取 VTT/zsd）与 `orchestrator.py`（对齐/覆盖率判断）接入；接入点在 Step 4 之前与 Step 5 之后
+- **依据**：`docs/01:947-948`（zsd 作为 LLM 重点的补充/校验来源，与 LLM 结果做时间点对齐校验，偏差 ≤ 2s；平台 VTT 可直接复用，作为 ASR 结果的补充/校验，无则走 ASR 生成）、`docs/01:977`（zsd 写入 keypoints：`timestamp_sec = zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`、`category` 按内容归类）、`docs/04:131`
 - **前置阻塞（必须先修）**：`metadata.py:16-17` 读取的是 `meta.get("title")` / `meta.get("duration_sec")`，但 `platform.fetch_course_meta()` 返回的是 `{"cookies","user_id","course","replays"}`（`platform.py:267-272`）——**键名不匹配**，且从未把三路流地址写入 `course.video_url`（而 `orchestrator.py:31` 依赖它）。这一处不修，A1/A2 在平台课程上根本跑不到
 
 **前置缺口：`rpId` 无处存放**
 
-API 3 / API 6 都需要 `videoId`（即 `rpId`）（`docs/10:205-206`），但 `courses` 表当前字段（`docs/03:36-47`）只有 `platform_course_id`（= `cId`），没有回放 id 字段。两种落地方式：
+API 3 / API 6 都需要 `videoId`（即 `rpId`）（`docs/01:205-206`），但 `courses` 表当前字段（`docs/04:36-47`）只有 `platform_course_id`（= `cId`），没有回放 id 字段。两种落地方式：
 
 1. **推荐**：给 `courses` 增加 `platform_replay_id`（TEXT），Step 1 取三路流地址时一并写入；A3、以及"重试复用缓存"都能直接复用。
-2. 临时方案：Step 1 把 `rpId` 放进任务上下文（内存）传递，不落库——但重试会新建任务（`docs/04:109-116`），上下文丢失，不满足"跳过 Step 1/2/3"的复用要求。
+2. 临时方案：Step 1 把 `rpId` 放进任务上下文（内存）传递，不落库——但重试会新建任务（`docs/05:109-116`），上下文丢失，不满足"跳过 Step 1/2/3"的复用要求。
 
 **三个接入点**
 
 | 接入点 | 时机 | 动作 |
 | --- | --- | --- |
 | Step 1 元数据 | `metadata.fetch_metadata` | 修正键名映射，保存 `rpId`（可顺带预取 VTT/zsd 缓存到任务上下文） |
-| Step 4 之前 | ASR 之前 | 有平台 VTT → 解析为转写（`ai_generated=False`、`source_model='platform-vtt'`）；ASR 结果与之逐句对齐，缺失段落用 ASR 补全（`docs/10:948`） |
-| Step 5 之后 | LLM 之后、`persist` 之前 | zsd → keypoints（`timestamp_sec=zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`），与 LLM 重点按 ≤ `TIMESTAMP_TOLERANCE_SEC` 去重后**并存展示**（`docs/10:977`、`docs/03:131`） |
+| Step 4 之前 | ASR 之前 | 有平台 VTT → 解析为转写（`ai_generated=False`、`source_model='platform-vtt'`）；ASR 结果与之逐句对齐，缺失段落用 ASR 补全（`docs/01:948`） |
+| Step 5 之后 | LLM 之后、`persist` 之前 | zsd → keypoints（`timestamp_sec=zsd_wait_time`、`source_model='platform-zsd'`、`ai_generated=False`），与 LLM 重点按 ≤ `TIMESTAMP_TOLERANCE_SEC` 去重后**并存展示**（`docs/01:977`、`docs/04:131`） |
 
 **对齐与合并（伪代码）**
 
@@ -1097,32 +1105,34 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 
 **注意**：`platform.py` 这两个函数是 `async def`，而流水线与 `transcribe` / `_chat` 都是同步的；调用方式参照 `metadata.py:15` 的 `asyncio.run(...)` 先例，不要在已有事件循环内嵌套调用。
 
-### A4：结果校验、失败降级与测试 ⚠️ 大部分已实现（7 测试失败）
+### A4：结果校验、失败降级与测试 ⚠️ 主体已实现（pipeline 38 通过 / 2 失败）
 
 - **位置**：`pipeline/retry.py`、`pipeline/orchestrator.py`、`pipeline/steps/persist.py`、`backend/tests/test_pipeline/`
-- **依据**：`docs/05:5-14`（外部 API 降级）、`docs/05:12`（429 按 `Retry-After`）、`docs/05:23-24`（整任务超时、并发上限）、`docs/05:49-52`（防幻觉与越界校验）、`docs/02:123`（流水线单测 mock 外部 API）、`docs/00:378-379`
+- **依据**：`docs/06:5-14`（外部 API 降级）、`docs/06:12`（429 按 `Retry-After`）、`docs/06:23-24`（整任务超时、并发上限）、`docs/06:49-52`（防幻觉与越界校验）、`docs/03:123`（流水线单测 mock 外部 API）、`docs/00:378-379`
+
+> 复核说明（2026-11-19）：本节表格中的"现状/待补"为改造前盘点。429 按 `Retry-After`、固定错误码（`StepError`）、整任务超时、并发上限、缓存续跑、部分失败降级与可观测性均已落地；剩余失败仅为 2 个测试用例自身与实现约定不一致，另见文末。
 
 **A4-1 持久化前的校验清单**
 
 | 校验 | 规则 | 失败处理 | 依据 |
 | --- | --- | --- | --- |
 | 转写时间戳 | 单调不减、`0 ≤ start_sec < end_sec ≤ duration_sec` | 越界截断/丢弃 + warning | AC-06-02、NFR-02 |
-| 重点时间戳 | `0 ≤ timestamp_sec ≤ duration_sec` | 丢弃 + **告警**（`persist.py:33-34` 现在静默 `continue`，需补日志） | AC-03-03、`docs/05:51` |
-| `category` | 落在 `KEYPOINT_CATEGORIES` 白名单内（`keypoint.py:9`） | 归为 `concept` | `docs/03:121` |
-| 必填字段 | `text` / `title` / `timestamp_sec` / `start_sec` 等非空 | 丢弃该条并告警 | `docs/03:92-165` |
-| AI 标识 | `ai_generated` / `source_model` / `generated_at` 必须写入 | 视为 `PERSIST_FAIL` | `docs/00:377`、`docs/05:50` |
+| 重点时间戳 | `0 ≤ timestamp_sec ≤ duration_sec` | 丢弃 + **告警**（`persist.py:33-34` 现在静默 `continue`，需补日志） | AC-03-03、`docs/06:51` |
+| `category` | 落在 `KEYPOINT_CATEGORIES` 白名单内（`keypoint.py:9`） | 归为 `concept` | `docs/04:121` |
+| 必填字段 | `text` / `title` / `timestamp_sec` / `start_sec` 等非空 | 丢弃该条并告警 | `docs/04:92-165` |
+| AI 标识 | `ai_generated` / `source_model` / `generated_at` 必须写入 | 视为 `PERSIST_FAIL` | `docs/00:377`、`docs/06:50` |
 | 空结果 | 允许为空并如实展示"暂无" | 不写占位假数据 | AC-03-06、AC-04-07、AC-05-06 |
 
 **A4-2 失败、重试与降级矩阵**
 
 | 场景 | 现状 | 待补 |
 | --- | --- | --- |
-| ASR 超时/报错 | `asr.py:7-11` 指数退避重试 `SILICONFLOW_ASR_MAX_RETRY` 次；仍失败由 `orchestrator.py:57-59` 标 failed | 错误码固定为 `ASR_TIMEOUT` / `ASR_ERROR`（现在取异常类名大写，会得到 `TIMEOUTERROR`，与 `docs/03:79`、`docs/04:63` 不一致） |
-| LLM 超时/报错 | `llm.py:12-16` 重试 `SILICONFLOW_MAX_RETRY` 次 | 错误码固定为 `LLM_TIMEOUT` / `LLM_ERROR`；**部分失败降级**：重点/总结/导图任一失败时，已成功的结果先落库、失败项留空并在 `error_message` 说明，任务整体仍标 `failed` 供重试，且"已生成的部分结果不回滚丢失"（`docs/05:10`）——注意 `persist.save_results` 当前要求四类结果齐全，需要支持 `None` / 空值 |
-| 429 限流 | 未处理：`retry.py:16` 只对 `(TimeoutError, RuntimeError)` 重试，`httpx.HTTPStatusError`（429）不会重试 | 增加 429 分支，按 `Retry-After` 头等待后重试（`docs/05:12`） |
-| 整任务超时 | 未落地：`config.py:58` 有 `task_total_timeout`，全项目无使用 | 在编排层对下载+ASR+LLM 累计耗时设上限，超时标 `TOTAL_TIMEOUT`（`docs/05:23`） |
-| 并发上限 | 未落地：`config.py:59` 有 `task_max_concurrent`，`parse_worker.py` 未使用 | 限制同时运行的任务数，超出排队（`docs/05:24`、`docs/10:1016`） |
-| 重试复用缓存 | 未落地：`task_service.py:26` 复制了 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载，从不读取该字段 | 按 `docs/04:115` 跳过 Step 1/2/3 从失败步骤续跑；否则一次 LLM 阶段失败会连带重复消耗 ASR 额度 |
+| ASR 超时/报错 | `asr.py:7-11` 指数退避重试 `SILICONFLOW_ASR_MAX_RETRY` 次；仍失败由 `orchestrator.py:57-59` 标 failed | 错误码固定为 `ASR_TIMEOUT` / `ASR_ERROR`（现在取异常类名大写，会得到 `TIMEOUTERROR`，与 `docs/04:79`、`docs/05:63` 不一致） |
+| LLM 超时/报错 | `llm.py:12-16` 重试 `SILICONFLOW_MAX_RETRY` 次 | 错误码固定为 `LLM_TIMEOUT` / `LLM_ERROR`；**部分失败降级**：重点/总结/导图任一失败时，已成功的结果先落库、失败项留空并在 `error_message` 说明，任务整体仍标 `failed` 供重试，且"已生成的部分结果不回滚丢失"（`docs/06:10`）——注意 `persist.save_results` 当前要求四类结果齐全，需要支持 `None` / 空值 |
+| 429 限流 | 未处理：`retry.py:16` 只对 `(TimeoutError, RuntimeError)` 重试，`httpx.HTTPStatusError`（429）不会重试 | 增加 429 分支，按 `Retry-After` 头等待后重试（`docs/06:12`） |
+| 整任务超时 | 未落地：`config.py:58` 有 `task_total_timeout`，全项目无使用 | 在编排层对下载+ASR+LLM 累计耗时设上限，超时标 `TOTAL_TIMEOUT`（`docs/06:23`） |
+| 并发上限 | 未落地：`config.py:59` 有 `task_max_concurrent`，`parse_worker.py` 未使用 | 限制同时运行的任务数，超出排队（`docs/06:24`、`docs/01:1016`） |
+| 重试复用缓存 | 未落地：`task_service.py:26` 复制了 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载，从不读取该字段 | 按 `docs/05:115` 跳过 Step 1/2/3 从失败步骤续跑；否则一次 LLM 阶段失败会连带重复消耗 ASR 额度 |
 | 凭证缺失 | `xfyun_asr.py:16-17`（将改名 `siliconflow_asr.py`）、`siliconflow_llm.py:14-15` 已抛 `RuntimeError` | 建议在建任务前前置校验，给出可读提示，而不是等到 ASR 步骤才失败 |
 
 **A4-3 可观测性与成本**
@@ -1132,7 +1142,7 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 
 **A4-4 单元测试清单**
 
-`backend/tests/test_pipeline/` 目前只有 `__init__.py`，AI 相关测试覆盖为 0；`pyproject.toml:29` 已声明 `respx`（httpx mock）但全项目未使用，`conftest.py` 已提供内存 SQLite 的 `client` fixture，基础设施是现成的。按 `docs/02:123` 要求 mock 外部 API（不产生真实调用、不消耗额度）：
+`backend/tests/test_pipeline/` 已落地 4 个测试文件（`test_asr.py`、`test_llm.py`、`test_persist.py`、`test_platform_assets.py`，共 40 个用例，2026-11-19 实测 38 通过 / 2 失败）；`conftest.py` 提供内存 SQLite 的 `client` fixture。按 `docs/03:123` 要求 mock 外部 API（不产生真实调用、不消耗额度）：
 
 | 测试 | 断言 |
 | --- | --- |
@@ -1152,17 +1162,17 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 | 转写字错率 | ≤ 20% | NFR-03、`docs/00:91` |
 | 重点有效性 | ≥ 80% | NFR-04、`docs/00:92` |
 | 任务完成率 | ≥ 95% | NFR-05、`docs/00:93` |
-| 未完成结果不得标记为成功 | — | AC-02-06、`docs/00:242`、`docs/05:14` |
+| 未完成结果不得标记为成功 | — | AC-02-06、`docs/00:242`、`docs/06:14` |
 | 时间点必须落在有效时长内 | — | AC-03-03、AC-06-02 |
-| 全部 AI 内容带生成标识 | 100% | `docs/00:377`、`docs/05:50` |
+| 全部 AI 内容带生成标识 | 100% | `docs/00:377`、`docs/06:50` |
 
 ### A5：实现前需统一的不一致项（本次检验结论） ✅ 已统一
 
 | 不一致项 | 事实 | 处理建议 |
 | --- | --- | --- |
-| 模型口径 | `config.py:43` = `deepseek-ai/DeepSeek-V3`；`.env.example:54` / `docs/06:52` = `Qwen/Qwen3-8B`；`docs/03:125` 示例用 `deepseek-v3` | 统一为同一个模型 id，并让 `source_model` 记录真实模型 |
-| 错误码 | `orchestrator.py:59` 用 `type(exc).__name__.upper()`；`docs/03:79`、`docs/04:43/53/63/78/87` 要求 `ASR_TIMEOUT`、`ASR_ERROR`、`LLM_TIMEOUT`、`LLM_ERROR`、`PERSIST_FAIL` 等固定码 | 在步骤层抛带 `error_code` 的异常，或维护异常类型 → 错误码映射表 |
-| 重试续跑 | `task_service.py:26` 复制 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载；`audio_cache_path` 未复制 | 与 `docs/04:115` 对齐，实现"跳过已完成的 Step 1/2/3" |
+| 模型口径 | `config.py:43` = `deepseek-ai/DeepSeek-V3`；`.env.example:54` / `docs/07:52` = `Qwen/Qwen3-8B`；`docs/04:125` 示例用 `deepseek-v3` | 统一为同一个模型 id，并让 `source_model` 记录真实模型 |
+| 错误码 | `orchestrator.py:59` 用 `type(exc).__name__.upper()`；`docs/04:79`、`docs/05:43/53/63/78/87` 要求 `ASR_TIMEOUT`、`ASR_ERROR`、`LLM_TIMEOUT`、`LLM_ERROR`、`PERSIST_FAIL` 等固定码 | 在步骤层抛带 `error_code` 的异常，或维护异常类型 → 错误码映射表 |
+| 重试续跑 | `task_service.py:26` 复制 `video_cache_path`，但 `orchestrator.py:31` 无条件重新下载；`audio_cache_path` 未复制 | 与 `docs/05:115` 对齐，实现"跳过已完成的 Step 1/2/3" |
 | 平台元数据映射 | `metadata.py:16-17` 的键名与 `platform.py:267-272` 返回结构不匹配；`course.video_url` 未被写入 | 先修映射，否则 AI 链路在平台课程上不可达（前置阻塞） |
 | 已定义未使用的 AI 配置 | `config.py` 的 `siliconflow_asr_model`、`siliconflow_asr_timeout`、`siliconflow_timeout:44`、`timestamp_tolerance_sec:60`，以及 `task_total_timeout:58`、`task_max_concurrent:59`（原 `xfyun_*` 系列将改名移除）| 在 A1/A2/A3/A4 中逐一接线，避免"配置写了但行为没变" |
 | 已定义未使用的常量 | `KEYPOINT_CATEGORIES`（`keypoint.py:9`）、`TASK_STATUSES`（`task.py:9-13`）除定义处外无引用，也未落成 DB CHECK | 在 A2-5 规范化与状态更新校验中使用 |
@@ -1173,15 +1183,19 @@ def align(ai_items: list[dict], platform_items: list[dict], tol: int) -> list[di
 ## 实现优先级
 
 ```
-B1 ✅ CAS验证码 → B2 ✅ 串联编排 → B3 ✅ 视频下载 → B4 ✅ 音频提取 → B5 ✅ 去重
-                                                ↓
-A1 ✅ 硅基ASR → A2 ✅ 硅基LLM → A4 ⚠️ 校验/降级/测试(7失败) → A3 ✅ 平台接入 → A5 ✅ 不一致项统一
-                                                ↓
-F1 ✅ F4 ✅ F5 ✅ F6 ✅ F2 ⚠️ F3 ❌ → U0-U5 ✅ 样式完善 → U6 暗色模式(P1)
+B1 ✅ SSO/CAS登录 → B2 ✅ 串联编排 → B3 ✅ 视频下载 → B4 ✅ 音频提取 → B5 ✅ 去重
+                                                  ↓
+A1 ✅ 硅基ASR → A2 ✅ 硅基LLM → A4 ✅ 校验/降级/测试(pipeline 40/40) → A3 ✅ 平台接入 → A5 ✅ 不一致项统一
+                                                  ↓
+F1 ✅ F4 ✅ F5 ✅ F6 ✅ F2 ✅ F3 ✅ → U0-U6 ✅ 样式完善（含暗色模式）
 ```
 
-后端 AI 链路（A1/A2/A3/A5）与数据链路（B1-B5）均已实现，A4 校验/降级/测试大部分落地。当前剩余阻塞点：
+后端 AI 链路（A1/A2/A3/A5）与数据链路（B1-B5）均已实现，A4 的校验/降级与 pipeline 测试已全绿，F2/F3 已按 SeekContext 方案重做。当前剩余项（2026-11-19 修复后）：
 
-1. **A4 的 7 个 pipeline 测试失败**：`siliconflow_asr.py:182` 的 `_wav_chunks` 用 `@contextmanager` 装饰却以 `for ... in _wav_chunks(path)` 迭代（`_GeneratorContextManager` 不可迭代）；`test_llm` 分段断言与实现行为不一致。需修 ASR 分片调用方式 + 校准 LLM 分段测试。
-2. **F2/F3 前端 SeekContext 架构偏差**：Player 不接受 children、不自包裹 Provider，改用 `onSeekReady` 回调上抛到 CourseDetail；SeekContext.Provider 存在但全项目无 `useContext(SeekContext)` 消费，实际靠 prop 传递。功能可用但与设计意图不符。
-3. **U6 暗色模式**：P1 低优先级，暂不实现。
+1. **黑盒 8 个用例失败，对应 5 个真实 BUG（本次按要求未修）**：授权过期仍可见课程（BUG-01）、导入缺业务校验（BUG-02）、学生可解析未授权课程（BUG-03）、任务查询/取消/重试越权（BUG-04）、授权有效期时区比较 500（BUG-05）。详见 `docs/13-black-box-test-report.md`，其中 BUG-03/04/05 为 P0。
+
+本次已修复（2026-11-19）：
+
+- **pipeline 2 个用例**：ASR 用例改用 `@respx.mock` 启用 router，请求可被拦截；LLM 用例按 `_split_chunks` 的 `max(1000, ...)` 下限构造 ≥1000 字转写。结果 pipeline 40/40 通过。
+- **F2/F3**：Subtitle/Keypoints/Mindmap 改用 `useContext(SeekContext)`；Player 接受 children 并在内部包裹 Provider；CourseDetail 移除 `onSeek` prop 传递。前端 `tsc --noEmit` 与 `vite build` 均通过。
+- **U6 暗色模式**：Tailwind 启用 `darkMode: 'class'`；新增 `useTheme`（localStorage + `prefers-color-scheme`）与 Layout 切换按钮；页面/组件补齐 `dark:` 变体。`tsc` 与 `vite build` 通过，产物中含暗色样式。

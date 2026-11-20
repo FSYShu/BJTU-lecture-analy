@@ -1,6 +1,6 @@
 """业务异常定义与全局异常处理器。
 
-对应 docs/05-risk-handling.md：失败隔离、权限拦截、API 异常降级。
+对应 docs/06-risk-handling.md：失败隔离、权限拦截、API 异常降级。
 """
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse

@@ -1,6 +1,6 @@
 """指数退避重试策略，并支持 HTTP 429 按 ``Retry-After`` 等待。
 
-对应 docs/05-risk-handling.md：
+对应 docs/06-risk-handling.md：
 - 外部 API 异常降级（ASR / 大模型 / 课程平台）
 - ``API 限流/429 | retry.py 识别 429 状态码，按 Retry-After 头等待后重试``
 

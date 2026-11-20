@@ -1,4 +1,4 @@
-"""转写字幕表。对应 docs/03-data-model.md §5，FR-03，句级时间戳。"""
+"""转写字幕表。对应 docs/04-data-model.md §5，FR-03，句级时间戳。"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func

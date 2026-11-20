@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import { Transformer } from 'markmap-lib';
 import { Markmap } from 'markmap-view';
 import type { Mindmap } from '@/types';
+import { SeekContext } from '@/components/Player';
 
 interface MindmapProps {
   mindmap: Mindmap;
@@ -12,10 +13,11 @@ export default function MindmapView({ mindmap, onSeek }: MindmapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const mmRef = useRef<Markmap | null>(null);
   const onSeekRef = useRef(onSeek);
+  const seek = useContext(SeekContext) ?? onSeek;
 
   useEffect(() => {
-    onSeekRef.current = onSeek;
-  }, [onSeek]);
+    onSeekRef.current = seek;
+  }, [seek]);
 
   const md = buildMarkdown(mindmap);
 
@@ -53,8 +55,8 @@ export default function MindmapView({ mindmap, onSeek }: MindmapProps) {
   }, []);
 
   return (
-    <div className="border border-gray-200 rounded-lg p-2">
-      {mindmap.ai_generated && <div className="text-xs text-accent-500 mb-1">AI 生成</div>}
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-2 bg-white dark:bg-gray-800">
+      {mindmap.ai_generated && <div className="text-xs text-accent-500 dark:text-accent-200 mb-1">AI 生成</div>}
       <svg ref={svgRef} className="w-full h-96" />
     </div>
   );

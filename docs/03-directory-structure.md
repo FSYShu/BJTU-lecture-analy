@@ -1,4 +1,4 @@
-# 02 · 完整项目目录树与模块职责
+# 03 · 完整项目目录树与模块职责
 
 > 对应产出清单第 2、3 项。目录树区分前端、后端、配置、缓存、参考文档；每个目录/模块说明作用。P1 模块仅预留目录占位，MVP 不编码。
 
@@ -10,14 +10,19 @@ BJTU-lecture-analy/
 ├── docs/                                    # 【参考文档目录】存放全部原始参考资料与设计文档
 │   ├── 00-requirements-and-product-design.md   # 原始需求文档
 │   ├── 00-requirements-and-product-design.pptx  # 原始 PPT 材料
-│   ├── 01-architecture.md                   # 系统分层架构图
-│   ├── 02-directory-structure.md            # 本文档：目录树 + 模块职责
-│   ├── 03-data-model.md                     # SQLite 表设计
-│   ├── 04-data-flow.md                      # 异步解析任务数据流
-│   ├── 05-risk-handling.md                  # 风险代码层面处理
-│   ├── 06-env-vars.md                       # 环境变量清单说明
-│   ├── 07-dependencies.md                   # 依赖示例
-│   └── 08-p0-p1-roadmap.md                  # P0/P1 模块划分
+│   ├── 01-platform-feasibility-analysis.md  # 平台抓取可行性分析
+│   ├── 02-architecture.md                   # 系统分层架构图
+│   ├── 03-directory-structure.md            # 本文档：目录树 + 模块职责
+│   ├── 04-data-model.md                     # SQLite 表设计
+│   ├── 05-data-flow.md                      # 异步解析任务数据流
+│   ├── 06-risk-handling.md                  # 风险代码层面处理
+│   ├── 07-env-vars.md                       # 环境变量清单说明
+│   ├── 08-dependencies.md                   # 依赖示例
+│   ├── 09-p0-p1-roadmap.md                  # P0/P1 模块划分
+│   ├── 10-mvp-implementation-plan.md        # MVP 实现计划与完成状态
+│   ├── 11-performance-optimization.md       # 全链路性能优化
+│   ├── 12-black-box-test-report.md          # 黑盒测试报告
+│   └── 13-summary-and-detailed-design.md    # 概要与详细设计文档
 │
 ├── backend/                                 # 【后端目录】Python FastAPI
 │   ├── pyproject.toml                       # uv 依赖定义（锁定版本）
@@ -41,7 +46,7 @@ BJTU-lecture-analy/
 │   │   │   ├── base.py                      # SQLAlchemy Declarative Base
 │   │   │   ├── session.py                   # 会话工厂 + get_db 依赖
 │   │   │   ├── init_db.py                   # 建表 + 初始管理员
-│   │   │   └── models/                      # ORM 模型（见 docs/03-data-model.md）
+│   │   │   └── models/                      # ORM 模型（见 docs/04-data-model.md）
 │   │   │       ├── __init__.py
 │   │   │       ├── user.py                  # 用户
 │   │   │       ├── course.py                # 课程
@@ -233,4 +238,4 @@ BJTU-lecture-analy/
 - **P0（MVP 必须实现）**：上述所有非 `p1/` 目录。
 - **P1（仅预留占位，MVP 不编码）**：所有 `p1/` 子目录，包括 `backend/app/api/v1/p1/`、`backend/app/services/p1/`、`frontend/src/components/p1/`、`frontend/src/pages/p1/`。每个 P1 占位文件仅含模块说明注释，不实现逻辑。
 
-详细 P0/P1 划分见 `docs/08-p0-p1-roadmap.md`。
+详细 P0/P1 划分见 `docs/09-p0-p1-roadmap.md`。

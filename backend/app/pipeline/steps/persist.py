@@ -2,8 +2,8 @@
 
 - 转写/重点的来源标识（``ai_generated``、``source_model``）由生成方决定：
   ASR 结果写 ``siliconflow-asr``，平台 VTT/zsd 写 ``platform-vtt`` / ``platform-zsd``；
-- 时间戳越界丢弃并**告警**（docs/05:51、AC-03-03），``category`` 走白名单（docs/03:121）；
-- 重点的 ``source_transcript_ids`` 由本地 seq → 真实转写 id 换算（docs/03:126 溯源）；
+- 时间戳越界丢弃并**告警**（docs/06:51、AC-03-03），``category`` 走白名单（docs/04:121）；
+- 重点的 ``source_transcript_ids`` 由本地 seq → 真实转写 id 换算（docs/04:126 溯源）；
 - 部分失败时允许 summary / mindmap 缺省：不写空记录，前端按 AC-04-07 / AC-05-06 显示"尚未生成"。
 """
 from __future__ import annotations

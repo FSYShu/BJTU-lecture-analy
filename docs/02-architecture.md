@@ -1,4 +1,4 @@
-# 01 · 系统分层整体架构
+# 02 · 系统分层整体架构
 
 > 对应产出清单第 1 项。描述输入层 / 处理层 / 引擎层 / 输出层四层流水线，以及与前端、后端、外部 API、存储的对接关系。
 
@@ -81,7 +81,7 @@
 - **无 GPU**：全部为 HTTPS API 调用，普通云服务器可运行。
 
 ### 输出层
-- **持久化**：`pipeline/steps/persist.py` 将转写字幕、重点、总结、导图写入 SQLite（见 `docs/03-data-model.md`）。
+- **持久化**：`pipeline/steps/persist.py` 将转写字幕、重点、总结、导图写入 SQLite（见 `docs/04-data-model.md`）。
 - **前端展示**：通过 FastAPI REST 接口返回，前端用 Video.js 播放、markmap 渲染导图，所有 AI 生成内容带 `ai_generated=true` 标识。
 - **跳转联动**：字幕句 / 重点 / 导图节点均携带视频时间点，前端点击后调用 `player.currentTime(t)`，偏差 ≤ 2 秒（`TIMESTAMP_TOLERANCE_SEC`）。
 

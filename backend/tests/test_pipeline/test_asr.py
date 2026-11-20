@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import respx
 
 from app.config import settings
 from app.integrations import siliconflow_asr
@@ -78,7 +79,7 @@ def test_from_text_raises_when_estimation_disabled(monkeypatch):
 
 
 def test_payload_without_text_or_segments_returns_empty():
-    """空分片（静音段）应跳过而非报错（docs/05 风险处理）。"""
+    """空分片（静音段）应跳过而非报错（docs/06 风险处理）。"""
     result = siliconflow_asr._sentences_from_payload({}, offset=0.0, chunk_end=1.0)
     assert result == []
 
@@ -160,9 +161,9 @@ def test_transcribe_falls_back_to_plain_params(monkeypatch, wav_file):
     assert out[0]["text"] == "纯文本。"
 
 
+@respx.mock
 def test_transcribe_sends_bearer_token(monkeypatch, wav_file):
     """用 respx 校验真实 httpx 请求：URL、鉴权头与 multipart 字段。"""
-    respx = pytest.importorskip("respx")
     monkeypatch.setattr(settings, "siliconflow_api_key", "test-key")
     monkeypatch.setattr(settings, "siliconflow_base_url", "https://api.siliconflow.cn/v1")
     monkeypatch.setattr(settings, "siliconflow_asr_chunk_seconds", 30)

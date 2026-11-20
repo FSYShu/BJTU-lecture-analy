@@ -22,7 +22,7 @@ def run_asr(audio_path: str, task_id: int, progress_callback=None) -> list[dict]
     """ASR 步骤入口。
 
     重试由 ``_transcribe`` 的装饰器完成（指数退避 + 429 Retry-After），
-    重试耗尽后在这里翻译成 docs/03:79 约定的固定错误码：
+    重试耗尽后在这里翻译成 docs/04:79 约定的固定错误码：
     ``ASR_TIMEOUT`` / ``ASR_ERROR``。
     """
     try:

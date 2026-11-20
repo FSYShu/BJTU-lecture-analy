@@ -60,16 +60,16 @@ export default function CourseList() {
           <Link
             key={c.id}
             to={`/courses/${courseKey(c)}`}
-            className="border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-primary-300 transition-all flex flex-col gap-2"
+            className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-500 transition-all flex flex-col gap-2"
           >
-            <div className="font-medium text-gray-800 line-clamp-2">{c.title}</div>
-            <div className="text-sm text-gray-500">
+            <div className="font-medium text-gray-800 dark:text-gray-100 line-clamp-2">{c.title}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               {c.course_num && c.fz_id ? `${c.course_num}[${c.fz_id.slice(-2)}]` : c.course_num || ''}
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-gray-400 dark:text-gray-500">
               {[c.teacher_name, c.session_label].filter(Boolean).join(' · ') || ''}
             </div>
-            <div className="text-xs text-primary-600 mt-auto">
+            <div className="text-xs text-primary-600 dark:text-primary-400 mt-auto">
               {replayCounts[c.id] != null ? `${replayCounts[c.id]} 节回放` : ''}
             </div>
           </Link>

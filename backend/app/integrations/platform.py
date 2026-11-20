@@ -1,6 +1,6 @@
 """北交大课程平台对接客户端。
 
-对接 docs/10-platform-feasibility-analysis.md 中的 API 1/2/3/6 与 CAS 登录。
+对接 docs/01-platform-feasibility-analysis.md 中的 API 1/2/3/6 与 CAS 登录。
 - CAS 登录需 Playwright（可选依赖：uv add playwright && uv run playwright install chromium）
 - 登录成功后导出 Cookie 给 httpx.AsyncClient 复用，后续 API 与视频下载共用会话
 - 视频服务器 lmt5.bjtu.edu.cn:8880 的 m3u8/.ts 无需认证，直接 200

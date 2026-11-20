@@ -1,4 +1,4 @@
-"""课程授权表。对应 docs/03-data-model.md §3，FR-13。"""
+"""课程授权表。对应 docs/04-data-model.md §3，FR-13。"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, func

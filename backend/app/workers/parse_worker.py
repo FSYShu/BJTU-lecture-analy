@@ -1,7 +1,7 @@
 """BackgroundTasks 入口：执行整条流水线，单任务独立 try/except 失败隔离。
 
 ``TASK_MAX_CONCURRENT`` 限制并发解析任务数：超出上限的任务在这里排队等待
-（docs/05:24「超出排队」、docs/10:1016 IP 并发限流）。
+（docs/06:24「超出排队」、docs/01:1016 IP 并发限流）。
 """
 from __future__ import annotations
 

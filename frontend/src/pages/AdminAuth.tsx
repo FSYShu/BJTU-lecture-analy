@@ -58,18 +58,18 @@ export default function AdminAuth() {
 
       <div className="flex gap-3 items-end">
         <div className="flex-1 space-y-1">
-          <label className="text-sm text-gray-600">课程 ID</label>
+          <label className="text-sm text-gray-600 dark:text-gray-300">课程 ID</label>
           <input
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+            className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
             placeholder="课程 ID"
             value={courseId}
             onChange={(e) => setCourseId(e.target.value)}
           />
         </div>
         <div className="flex-1 space-y-1">
-          <label className="text-sm text-gray-600">学生 ID</label>
+          <label className="text-sm text-gray-600 dark:text-gray-300">学生 ID</label>
           <input
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+            className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
             placeholder="学生 ID"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
@@ -84,10 +84,10 @@ export default function AdminAuth() {
         </button>
       </div>
 
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-gray-50 text-gray-600 text-left">
+            <tr className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-left">
               <th className="px-4 py-2 font-medium">课程</th>
               <th className="px-4 py-2 font-medium">学生</th>
               <th className="px-4 py-2 font-medium">状态</th>
@@ -97,21 +97,21 @@ export default function AdminAuth() {
           <tbody>
             {auths.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-gray-400">暂无授权记录</td>
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">暂无授权记录</td>
               </tr>
             ) : (
               auths.map((a) => (
-                <tr key={a.id} className="border-t border-gray-100">
+                <tr key={a.id} className="border-t border-gray-100 dark:border-gray-700">
                   <td className="px-4 py-2">{a.course_title ?? a.course_id}</td>
                   <td className="px-4 py-2">{a.student_name ?? a.user_id}</td>
                   <td className="px-4 py-2">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${a.is_revoked ? 'bg-gray-100 text-gray-500' : 'bg-success-100 text-success-700'}`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${a.is_revoked ? 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300' : 'bg-success-100 text-success-700 dark:bg-success-700/30 dark:text-success-500'}`}>
                       {a.is_revoked ? '已撤销' : '有效'}
                     </span>
                   </td>
                   <td className="px-4 py-2">
                     {!a.is_revoked && (
-                      <button className="text-sm text-danger-600 hover:underline" onClick={() => revoke(a.id)}>撤销</button>
+                      <button className="text-sm text-danger-600 dark:text-danger-500 hover:underline" onClick={() => revoke(a.id)}>撤销</button>
                     )}
                   </td>
                 </tr>

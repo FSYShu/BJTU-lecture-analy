@@ -129,8 +129,9 @@ def test_split_chunks_respects_limit(monkeypatch):
 
 
 def test_extract_keypoints_merges_duplicates_across_chunks(monkeypatch):
-    monkeypatch.setattr(settings, "siliconflow_max_input_chars", 100)
-    text = "\n".join(f"[{i * 10}.0] 第 {i} 句课程内容，用于触发分段。" for i in range(20))
+    # _split_chunks 对阈值设了 1000 的下限，这里按真实下限构造足够长的转写
+    monkeypatch.setattr(settings, "siliconflow_max_input_chars", 1000)
+    text = "\n".join(f"[{i * 10}.0] 第 {i} 句课程内容，用于触发分段。" for i in range(60))
     calls: list[str] = []
 
     def fake_chat(prompt: str) -> str:

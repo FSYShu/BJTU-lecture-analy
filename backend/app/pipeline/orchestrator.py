@@ -1,12 +1,12 @@
 """流水线编排。依次调度 steps，更新任务状态，失败隔离（A3/A4）。
 
-对应 docs/04-data-flow.md 六步数据流、docs/05-risk-handling.md 降级与重试：
+对应 docs/05-data-flow.md 六步数据流、docs/06-risk-handling.md 降级与重试：
 
-- 固定错误码：步骤抛 ``StepError``，统一写入 ``parse_tasks.error_code``（docs/03:79）；
-- 整任务超时：每个步骤前检查 ``TASK_TOTAL_TIMEOUT`` 预算，超时标 ``TOTAL_TIMEOUT``（docs/05:23）；
-- 缓存复用：重试任务复用父任务已落库的转写/重点/总结/导图，避免重复消耗 ASR/LLM 额度（docs/04:115）；
-- 平台字幕优先：平台 VTT 覆盖足够时直接用，否则走 ASR（docs/10:948）；
-- 部分失败降级：LLM 部分子任务失败时仍先落库已完成的部分，再把任务标记为 failed 供重试（docs/05:10）。
+- 固定错误码：步骤抛 ``StepError``，统一写入 ``parse_tasks.error_code``（docs/04:79）；
+- 整任务超时：每个步骤前检查 ``TASK_TOTAL_TIMEOUT`` 预算，超时标 ``TOTAL_TIMEOUT``（docs/06:23）；
+- 缓存复用：重试任务复用父任务已落库的转写/重点/总结/导图，避免重复消耗 ASR/LLM 额度（docs/05:115）；
+- 平台字幕优先：平台 VTT 覆盖足够时直接用，否则走 ASR（docs/01:948）；
+- 部分失败降级：LLM 部分子任务失败时仍先落库已完成的部分，再把任务标记为 failed 供重试（docs/06:10）。
 """
 from __future__ import annotations
 
@@ -202,7 +202,7 @@ def _check_cancelled(db: Session, task_id: int) -> None:
 
 
 def _reuse_cached(path: str | None) -> str | None:
-    """缓存文件仍存在则复用，跳过下载/音频提取（docs/04:115）。"""
+    """缓存文件仍存在则复用，跳过下载/音频提取（docs/05:115）。"""
     if not path:
         return None
     candidate = Path(path)
@@ -216,7 +216,7 @@ def _reuse_cached(path: str | None) -> str | None:
 
 
 def _resolve_transcripts(ctx: CourseContext, audio_path: str, task_id: int, db: Session = None, tid: int = None) -> list[dict]:
-    """平台 VTT 覆盖足够时直接使用，否则调用 ASR（docs/10:948）。"""
+    """平台 VTT 覆盖足够时直接使用，否则调用 ASR（docs/01:948）。"""
     duration = ctx.course.duration_sec or 0
     if ctx.vtt_sentences:
         coverage = platform_assets.vtt_coverage(ctx.vtt_sentences, duration)
