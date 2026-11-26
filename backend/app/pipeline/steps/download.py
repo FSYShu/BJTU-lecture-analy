@@ -119,22 +119,21 @@ def download_audio_from_url(url: str, task_id: int, progress_callback=None) -> s
             progress_data[key] = value
             if key == "progress":
                 now = time.monotonic()
-                if now - last_log >= 5:
-                    out_time = progress_data.get("out_time", "N/A")
-                    speed = progress_data.get("speed", "N/A")
-                    total_size = int(progress_data.get("total_size", 0)) // 1024
-                    logger.info(
-                        "[task={}] ffmpeg 进度: time={} speed={}x size={}KB",
-                        task_id, out_time, speed, total_size,
-                    )
-                    if progress_callback:
-                        try:
-                            progress_callback(out_time, speed, total_size)
-                        except StepError:
-                            raise
-                        except Exception:  # noqa: BLE001
-                            pass
-                    last_log = now
+                out_time = progress_data.get("out_time", "N/A")
+                speed = progress_data.get("speed", "N/A")
+                total_size = int(progress_data.get("total_size", 0)) // 1024
+                logger.info(
+                    "[task={}] ffmpeg 进度: time={} speed={}x size={}KB",
+                    task_id, out_time, speed, total_size,
+                )
+                if progress_callback:
+                    try:
+                        progress_callback(out_time, speed, total_size)
+                    except StepError:
+                        raise
+                    except Exception:  # noqa: BLE001
+                        pass
+                last_log = now
                 progress_data = {}
         proc.wait()
         if proc.returncode != 0:

@@ -9,8 +9,12 @@ export default function SummaryView({ summary }: { summary: Summary }) {
   try { hints = JSON.parse(summary.review_hints || '[]'); } catch { /* 容错 */ }
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4 bg-white dark:bg-gray-800">
-      {summary.ai_generated && <div className="text-xs text-accent-500 dark:text-accent-200 text-right -mb-2">AI 生成</div>}
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+      <div className="flex items-center gap-2 px-4 py-2 border-b dark:border-gray-700">
+        <span className="text-sm font-medium">课程总结</span>
+        {summary.ai_generated && <span className="text-[10px] text-accent-500 dark:text-accent-200 bg-accent-50 dark:bg-accent-700/30 px-1 rounded">AI</span>}
+      </div>
+      <div className="p-4 space-y-4">
       {summary.overview && (
         <section>
           <h3 className="font-semibold text-base mb-1">课程概览</h3>
@@ -61,6 +65,7 @@ export default function SummaryView({ summary }: { summary: Summary }) {
           </ul>
         </section>
       )}
+      </div>
     </div>
   );
 }

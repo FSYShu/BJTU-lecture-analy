@@ -1041,3 +1041,92 @@ class TestPlatform:
         token = _login(client, "teacher1", "pw123456")
         resp = client.post(f"{BASE}/platform/courses/M9999-99/replays/9001/stream", headers=_headers(token))
         assert resp.status_code == 404
+
+class TestBlackboxFailures:
+    """异常路径黑盒测试：TC-B-03/04。"""
+
+    def _patch_session_local(self, monkeypatch, engine):
+        """让 SessionLocal 使用测试引擎，使 worker 能看到测试数据。"""
+        from sqlalchemy.orm import sessionmaker
+        TestingSL = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        import app.db.session as session_mod
+        monkeypatch.setattr(session_mod, "SessionLocal", TestingSL)
+
+    def test_audio_extraction_failure_marks_task_failed(self, client, db, monkeypatch, engine):
+        """TC-B-03 音频提取异常时任务标记 failed，error_code 为 IO_ERROR。"""
+        _enable_ai(monkeypatch)
+        self._patch_session_local(monkeypatch, engine)
+
+        def fake_worker(task_id):
+            from app.db.session import SessionLocal
+            from app.services import task_service
+            s = SessionLocal()
+            try:
+                task_service.mark_failed(s, task_id, "IO_ERROR", "音频提取失败：ffmpeg 返回码 1")
+            finally:
+                s.close()
+
+        monkeypatch.setattr(courses_api, "parse_worker_run", fake_worker)
+        monkeypatch.setattr(tasks_api, "parse_worker_run", fake_worker)
+        monkeypatch.setattr(platform_api, "parse_worker_run", fake_worker)
+
+        _teacher(db)
+        course = _make_course(db, video_url="http://broken/v.m3u8")
+        token = _login(client, "teacher1", "pw123456")
+        resp = client.post(f"{BASE}/courses/{course.id}/parse", headers=_headers(token))
+        assert resp.status_code == 201
+        task_id = resp.json()["id"]
+
+        resp = client.get(f"{BASE}/tasks/{task_id}", headers=_headers(token))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "failed"
+        assert body["error_code"] == "IO_ERROR"
+        assert "音频提取失败" in body["error_message"]
+
+    def test_asr_failure_then_retry_preserves_history(self, client, db, monkeypatch, engine):
+        """TC-B-04 ASR 服务异常时任务标记 failed（ASR_ERROR），重试生成新任务且历史保留。"""
+        _enable_ai(monkeypatch)
+        self._patch_session_local(monkeypatch, engine)
+
+        def fake_worker(task_id):
+            from app.db.session import SessionLocal
+            from app.services import task_service
+            s = SessionLocal()
+            try:
+                task_service.mark_failed(s, task_id, "ASR_ERROR", "ASR 转写失败：连接超时")
+            finally:
+                s.close()
+
+        monkeypatch.setattr(courses_api, "parse_worker_run", fake_worker)
+        monkeypatch.setattr(tasks_api, "parse_worker_run", fake_worker)
+        monkeypatch.setattr(platform_api, "parse_worker_run", fake_worker)
+
+        _teacher(db)
+        course = _make_course(db, video_url="http://example.com/v.mp4")
+        token = _login(client, "teacher1", "pw123456")
+
+        resp = client.post(f"{BASE}/courses/{course.id}/parse", headers=_headers(token))
+        assert resp.status_code == 201
+        original_task_id = resp.json()["id"]
+
+        resp = client.get(f"{BASE}/tasks/{original_task_id}", headers=_headers(token))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "failed"
+        assert body["error_code"] == "ASR_ERROR"
+        assert "ASR 转写失败" in body["error_message"]
+
+        resp = client.post(f"{BASE}/tasks/{original_task_id}/retry", headers=_headers(token))
+        assert resp.status_code == 201
+        new_task = resp.json()
+        assert new_task["status"] == "queued"
+        assert new_task["retry_count"] == 1
+        assert new_task["parent_task_id"] == original_task_id
+
+        resp = client.get(f"{BASE}/tasks/{original_task_id}", headers=_headers(token))
+        assert resp.json()["status"] == "failed"
+
+        resp = client.get(f"{BASE}/tasks/{new_task['id']}", headers=_headers(token))
+        assert resp.json()["status"] == "failed"
+        assert resp.json()["error_code"] == "ASR_ERROR"

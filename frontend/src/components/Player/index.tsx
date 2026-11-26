@@ -1,10 +1,9 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import videojs from 'video.js';
-import 'video.js/dist/video-js.css';
+import ArtPlayer from 'artplayer';
+import Hls from 'hls.js';
 import type { Transcript } from '@/types';
 
 export type SeekFn = (t: number) => void;
-
 export const SeekContext = createContext<SeekFn | null>(null);
 
 interface PlayerProps {
@@ -45,35 +44,74 @@ function transcriptsToVtt(transcripts: Transcript[]): string {
 }
 
 export default function Player({ src, transcripts, loading, initialTime, onTimeUpdate, onSeekReady, children }: PlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const artRef = useRef<ArtPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
-  const remoteTrackRef = useRef<any>(null);
+  const subtitleUrlRef = useRef<string>('');
+  const transcriptsRef = useRef<Transcript[] | undefined>(undefined);
+  const hlsRef = useRef<Hls | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [playerReady, setPlayerReady] = useState(false);
 
-  // 元数据没就绪时 currentTime() 会失效：先记下来，等 loadedmetadata 再跳。
   const seek = useCallback((t: number) => {
     if (!Number.isFinite(t) || t < 0) return;
-    const player = playerRef.current;
-    if (!player || player.readyState() === 0) {
+    const art = artRef.current;
+    if (!art) {
       pendingSeekRef.current = t;
       return;
     }
-    player.currentTime(t);
+    art.currentTime = t;
   }, []);
 
   useEffect(() => {
+    transcriptsRef.current = transcripts;
+  }, [transcripts]);
 
-    if (!videoRef.current) return;
+  const setupSubtitles = useCallback(async () => {
+    const art = artRef.current;
+    if (!art) return;
 
-    if (playerRef.current) {
-      try { playerRef.current.dispose(); } catch { /* noop */ }
-      playerRef.current = null;
-      remoteTrackRef.current = null;
+    const currentTranscripts = transcriptsRef.current;
+
+    if (!currentTranscripts || currentTranscripts.length === 0) {
+      if (subtitleUrlRef.current) {
+        URL.revokeObjectURL(subtitleUrlRef.current);
+        subtitleUrlRef.current = '';
+      }
+      try { art.subtitle.show = false; } catch { /* noop */ }
+      return;
     }
+
+    const vtt = transcriptsToVtt(currentTranscripts);
+    if (!vtt.trim() || vtt === 'WEBVTT') return;
+
+    if (subtitleUrlRef.current) {
+      URL.revokeObjectURL(subtitleUrlRef.current);
+    }
+
+    const blob = new Blob([vtt], { type: 'text/vtt' });
+    const url = URL.createObjectURL(blob);
+    subtitleUrlRef.current = url;
+
+    try {
+      await art.subtitle.switch(url, { type: 'vtt' });
+      art.subtitle.show = true;
+    } catch { /* noop */ }
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (artRef.current) {
+      try { artRef.current.destroy(); } catch { /* noop */ }
+      artRef.current = null;
+    }
+    if (hlsRef.current) {
+      try { hlsRef.current.destroy(); } catch { /* noop */ }
+      hlsRef.current = null;
+    }
+
     pendingSeekRef.current = null;
-    setPlayerReady(false);
 
     if (!src) return;
 
@@ -82,90 +120,97 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
     }
 
     setError(null);
+
+    const isM3u8 = src.includes('.m3u8');
+
     try {
-      playerRef.current = videojs(videoRef.current, {
-        controls: true,
-        fluid: true,
-        sources: [{
-          src,
-          type: src.includes('.m3u8') ? 'application/x-mpegURL' : undefined,
-        }],
+      const art = new ArtPlayer({
+        container,
+        url: src,
+        type: isM3u8 ? 'm3u8' : '',
+        customType: {
+          m3u8: (video: HTMLVideoElement, url: string) => {
+            if (Hls.isSupported()) {
+              const hls = new Hls();
+              hlsRef.current = hls;
+              hls.loadSource(url);
+              hls.attachMedia(video);
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+              video.src = url;
+            }
+          },
+        },
+        volume: 1,
+        autoplay: false,
+        pip: true,
+        setting: true,
+        playbackRate: true,
+        fullscreen: true,
+        fullscreenWeb: true,
+        mutex: true,
+        backdrop: true,
+        playsInline: true,
+        theme: '#3b82f6',
+        lang: 'zh-cn',
+        moreVideoAttr: {
+          crossOrigin: 'anonymous',
+        },
       });
 
-      playerRef.current.on('timeupdate', () => onTimeUpdate?.(playerRef.current.currentTime()));
-      playerRef.current.on('loadedmetadata', () => {
-        const pending = pendingSeekRef.current;
-        if (pending === null) return;
-        pendingSeekRef.current = null;
-        const duration = playerRef.current?.duration?.() ?? 0;
-        playerRef.current?.currentTime(duration > 0 ? Math.min(pending, duration) : pending);
+      artRef.current = art;
+
+      art.on('ready', () => {
+        if (pendingSeekRef.current !== null) {
+          const t = pendingSeekRef.current;
+          pendingSeekRef.current = null;
+          art.currentTime = t;
+        }
+        setupSubtitles();
       });
-      playerRef.current.on('error', () => {
-        const code = playerRef.current?.error()?.code;
-        setError(`视频加载失败 (错误码 ${code})，可能需要先在浏览器中打开视频地址信任证书`);
+
+      art.on('video:timeupdate', () => {
+        onTimeUpdate?.(art.currentTime);
       });
-      setPlayerReady(true);
+
+      art.on('video:loadedmetadata', () => {
+        if (pendingSeekRef.current !== null) {
+          const t = pendingSeekRef.current;
+          pendingSeekRef.current = null;
+          art.currentTime = t;
+        }
+      });
+
+      art.on('error', () => {
+        setError('视频加载失败，可能需要先在浏览器中打开视频地址信任证书');
+      });
     } catch (err) {
-      console.error('[Player] video.js init error:', err);
+      console.error('[Player] ArtPlayer init error:', err);
       setError('播放器初始化失败');
     }
+
     return () => {
-      try { playerRef.current?.dispose(); } catch { /* noop */ }
-      playerRef.current = null;
-      remoteTrackRef.current = null;
-      setPlayerReady(false);
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch { /* noop */ }
+        hlsRef.current = null;
+      }
+      try { artRef.current?.destroy(); } catch { /* noop */ }
+      artRef.current = null;
+      if (subtitleUrlRef.current) {
+        URL.revokeObjectURL(subtitleUrlRef.current);
+        subtitleUrlRef.current = '';
+      }
+      if (container) {
+        container.innerHTML = '';
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  // 字幕轨道：transcripts 或 player 变化时动态添加，不重新初始化播放器。
   useEffect(() => {
-    if (!playerReady) return;
-    const player = playerRef.current;
-    if (!player) return;
-
-    let disposed = false;
-    let createdUrl: string | null = null;
-    let createdTrack: any = null;
-
-    const setup = () => {
-      if (disposed) return;
-
-      if (remoteTrackRef.current) {
-        try { player.removeRemoteTextTrack(remoteTrackRef.current); } catch { /* noop */ }
-        remoteTrackRef.current = null;
-      }
-      if (!transcripts || transcripts.length === 0) return;
-
-      const vtt = transcriptsToVtt(transcripts);
-      if (!vtt.trim() || vtt === 'WEBVTT') return;
-
-      const blob = new Blob([vtt], { type: 'text/vtt' });
-      const url = URL.createObjectURL(blob);
-      createdUrl = url;
-
-      const track = player.addRemoteTextTrack({
-        kind: 'subtitles',
-        src: url,
-        srclang: 'zh',
-        label: '中文',
-      }, false);
-      createdTrack = track;
-      remoteTrackRef.current = track;
-      if (track) track.mode = 'showing';
-    };
-
-    player.ready(setup);
-
-    return () => {
-      disposed = true;
-      if (createdTrack) {
-        try { player.removeRemoteTextTrack(createdTrack); } catch { /* noop */ }
-      }
-      if (createdUrl) URL.revokeObjectURL(createdUrl);
-      if (remoteTrackRef.current === createdTrack) remoteTrackRef.current = null;
-    };
-  }, [transcripts, playerReady]);
+    if (artRef.current) {
+      setupSubtitles();
+    }
+  }, [transcripts, setupSubtitles]);
 
   useEffect(() => {
     onSeekReady?.(seek);
@@ -173,19 +218,17 @@ export default function Player({ src, transcripts, loading, initialTime, onTimeU
 
   return (
     <SeekContext.Provider value={seek}>
-      <div key={src} data-vjs-player style={{ minHeight: '360px', position: 'relative' }}>
-        <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
-        {!src && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-black">
-            {loading ? '加载视频中...' : '暂无视频'}
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 bg-black/80 z-10 p-4 text-center">
-            {error}
-          </div>
-        )}
-      </div>
+      <div key={src} ref={containerRef} style={{ aspectRatio: '16 / 9', position: 'relative' }} />
+      {!src && (
+        <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-black">
+          {loading ? '加载视频中...' : '暂无视频'}
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400 bg-black/80 z-10 p-4 text-center">
+          {error}
+        </div>
+      )}
       {children}
     </SeekContext.Provider>
   );

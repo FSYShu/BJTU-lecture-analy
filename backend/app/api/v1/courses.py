@@ -40,6 +40,9 @@ def start_parse(course_key: str, bg: BackgroundTasks, user: User = Depends(get_c
     course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise HTTPException(404, "课程不存在")
+    accessible = course_service.get_accessible_course(db, user, course.id)
+    if not accessible:
+        raise HTTPException(404, "课程不存在或未授权")
     task_service.ensure_parse_ready(course)
     task = task_service.create_task(db, course.id, user.id)
     import threading

@@ -397,6 +397,20 @@ async def get_stream_map_via_browser(
     策略 2（fallback）：若已知 ve_user_id，直接调 API 2。
     """
     from loguru import logger
+    from app.core.exceptions import AppError
+
+    # 策略 0：已知 ve_user_id 时直接走 HTTP API 2，无需浏览器。
+    # 回放页的 load 事件可能长期不结束，走 Playwright 会超时并导致播放失败。
+    if ve_user_id:
+        try:
+            stream_map = await get_stream_map(
+                _cookies_to_dict(cookies), course_sched_id, ve_user_id
+            )
+            if stream_map:
+                logger.info("[platform] API 2 直连成功: user_id={}", ve_user_id)
+                return stream_map, None
+        except Exception as e:
+            logger.warning("[platform] API 2 直连失败: {}，尝试浏览器方式", e)
 
     try:
         from playwright.async_api import async_playwright
@@ -424,11 +438,21 @@ async def get_stream_map_via_browser(
             await context.add_cookies(cookies)
             page = await context.new_page()
 
-            await page.goto(
-                "https://mis.bjtu.edu.cn/module/module/28/",
-                wait_until="domcontentloaded",
-                timeout=15000,
-            )
+            try:
+                await page.goto(
+                    "https://mis.bjtu.edu.cn/module/module/28/",
+                    wait_until="domcontentloaded",
+                    timeout=15000,
+                )
+            except Exception:
+                current_url = page.url
+                if "sso.bjtu.edu.cn" in current_url or "cas.bjtu.edu.cn" in current_url:
+                    raise AppError(
+                        code="COOKIES_EXPIRED",
+                        message="平台登录已过期，请重新登录",
+                        status_code=401,
+                    )
+                raise
             try:
                 await page.wait_for_selector(".courseItem", timeout=10000)
             except Exception:
@@ -442,7 +466,7 @@ async def get_stream_map_via_browser(
                     extracted_uid = ve_user_id
 
             if not ve_user_id:
-                from app.core.exceptions import AppError
+
 
                 raise AppError(
                     code="NO_VE_USER_ID",
@@ -500,7 +524,7 @@ async def _get_stream_map_via_ui(
 
             await page.goto(
                 "https://mis.bjtu.edu.cn/module/module/28/",
-                wait_until="load",
+                wait_until="domcontentloaded",
                 timeout=20000,
             )
             try:
@@ -594,7 +618,7 @@ async def _get_stream_map_via_ui(
 
             detail_page.on("response", _on_response)
 
-            await detail_page.goto(replay_url, wait_until="load", timeout=20000)
+            await detail_page.goto(replay_url, wait_until="domcontentloaded", timeout=20000)
             await asyncio.sleep(3)
             logger.info("[platform] UI 模式: 回放页加载完成, URL={}", detail_page.url[:120])
 
@@ -652,7 +676,7 @@ async def _get_stream_map_via_ui(
 
             logger.info("[platform] UI 模式: 尝试通过点击回放项拦截 API 2 响应")
             try:
-                await detail_page.goto(replay_url, wait_until="load", timeout=20000)
+                await detail_page.goto(replay_url, wait_until="domcontentloaded", timeout=20000)
                 await detail_page.wait_for_selector(".teachingCalendarItem", timeout=15000)
                 logger.info("[platform] UI 模式: 回放列表已渲染")
             except Exception:

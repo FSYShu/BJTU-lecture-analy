@@ -43,6 +43,8 @@ export interface Task {
   error_code?: string;
   error_message?: string;
   retry_count: number;
+  course_title?: string | null;
+  teach_time_str?: string | null;
 }
 
 export interface Transcript {

@@ -21,11 +21,27 @@ _running_lock = threading.Lock()
 def run(task_id: int) -> None:
     logger.info("[worker] 解析任务 {} 进入队列（并发上限 {}）", task_id, settings.task_max_concurrent)
     with _task_slots:
+        # 排队期间被取消的任务不应再启动：直接跳过，避免取消后仍输出解析日志
+        if _already_cancelled(task_id):
+            logger.info("[worker] 解析任务 task_id={} 已取消，跳过执行", task_id)
+            return
         _mark_started(task_id)
         try:
             run_pipeline(task_id)
         finally:
             _mark_finished(task_id)
+
+
+def _already_cancelled(task_id: int) -> bool:
+    from app.db.models import ParseTask
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        task = db.get(ParseTask, task_id)
+        return bool(task and task.status == "failed")
+    finally:
+        db.close()
 
 
 def _mark_started(task_id: int) -> None:

@@ -25,6 +25,9 @@ $KEEP_BACKUPS = 10
 
 Set-Location $WORK_DIR
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 # ---- 公共函数 ----
 function Format-FileSize($size) {
     if ($size -ge 1MB) { "{0:N1}MB" -f ($size / 1MB) }
@@ -296,12 +299,12 @@ if ($Docker) {
     if (Test-Path $frontendLog) { Clear-Content $frontendLog }
 
     Write-Step "1/2" "启动后端（后台静默）..."
-    $backendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "uv run python run.py > `"$backendLog`" 2>&1" `
+    $backendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "chcp 65001 >nul && set PYTHONIOENCODING=utf-8 && uv run python run.py > `"$backendLog`" 2>&1" `
         -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
     Write-Ok "后端 PID=$($backendProc.Id) (http://localhost:8000)"
 
     Write-Step "2/2" "启动前端（后台静默）..."
-    $frontendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "npm run dev > `"$frontendLog`" 2>&1" `
+    $frontendProc = Start-Process -FilePath "cmd" -ArgumentList "/c", "chcp 65001 >nul && set NO_COLOR=1 && npm run dev > `"$frontendLog`" 2>&1" `
         -WorkingDirectory $frontendDir -WindowStyle Hidden -PassThru
     Write-Ok "前端 PID=$($frontendProc.Id) (http://localhost:5173)"
 
@@ -330,7 +333,7 @@ if ($Docker) {
         while ($true) {
             if ($backendProc.HasExited -and $frontendProc.HasExited) { break }
             if (Test-Path $backendLog) {
-                $lines = Get-Content $backendLog -ErrorAction SilentlyContinue
+                $lines = Get-Content $backendLog -Encoding UTF8 -ErrorAction SilentlyContinue
                 if ($lines -and $lines.Count -gt $bkPos) {
                     for ($i = $bkPos; $i -lt $lines.Count; $i++) {
                         Write-Host "[后端] " -ForegroundColor Blue -NoNewline
@@ -340,7 +343,7 @@ if ($Docker) {
                 }
             }
             if (Test-Path $frontendLog) {
-                $lines = Get-Content $frontendLog -ErrorAction SilentlyContinue
+                $lines = Get-Content $frontendLog -Encoding UTF8 -ErrorAction SilentlyContinue
                 if ($lines -and $lines.Count -gt $fePos) {
                     for ($i = $fePos; $i -lt $lines.Count; $i++) {
                         Write-Host "[前端] " -ForegroundColor Magenta -NoNewline
