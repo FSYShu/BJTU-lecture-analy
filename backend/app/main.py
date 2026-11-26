@@ -1,4 +1,5 @@
 """FastAPI 应用入口。挂载路由、CORS、异常处理、日志初始化。"""
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,17 +24,22 @@ async def lifespan(app: FastAPI):
 
     init_db()
 
-    db = SessionLocal()
-    active_statuses = ["queued", "downloading", "extracting_audio", "asr_running", "llm_running", "persisting"]
-    stale = db.query(ParseTask).filter(ParseTask.status.in_(active_statuses)).all()
-    for t in stale:
-        t.status = "failed"
-        t.error_code = "INTERRUPTED"
-        t.error_message = "后端重启，任务被中断"
-    if stale:
-        db.commit()
-    logger.info("[app] 清理 {} 个未完成的解析任务", len(stale))
-    db.close()
+    # 单测用 TestClient 也会触发 lifespan。若不跳过，跑一次测试就会把真实库里
+    # 正在正常解析的任务误判成“后端重启，任务被中断”。
+    if "pytest" in sys.modules:
+        logger.info("[app] 测试进程启动，跳过未完成任务清理")
+    else:
+        db = SessionLocal()
+        active_statuses = ["queued", "downloading", "extracting_audio", "asr_running", "llm_running", "persisting"]
+        stale = db.query(ParseTask).filter(ParseTask.status.in_(active_statuses)).all()
+        for t in stale:
+            t.status = "failed"
+            t.error_code = "INTERRUPTED"
+            t.error_message = "后端重启，任务被中断"
+        if stale:
+            db.commit()
+        logger.info("[app] 清理 {} 个未完成的解析任务", len(stale))
+        db.close()
 
     yield
     # 关闭复用的硅基流动 HTTP 连接池（LLM / ASR 共享），避免进程退出时留下未释放连接

@@ -97,6 +97,13 @@ def update_status(db: Session, task_id: int, status: str, progress: int | None =
     task = db.get(ParseTask, task_id)
     if not task:
         return
+    # 取消接口在独立 Session 提交，强制刷新避免读到本 Session 缓存的旧状态
+    db.refresh(task)
+    # 终态不可回退：用户取消（failed+CANCELLED）后，流水线尚未感知的进度回调
+    # 不能把状态改回 running，否则取消标记被抹掉、任务会继续解析。
+    if task.status in ("succeeded", "failed") and status != task.status:
+        logger.info("[task={}] 任务已处于终态 {}，忽略状态更新 {}", task_id, task.status, status)
+        return
     task.status = status
     if progress is not None:
         task.progress = max(0, min(100, int(progress)))

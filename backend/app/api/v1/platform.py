@@ -214,6 +214,10 @@ async def get_course_replays(
     if not course or not course.platform_c_id:
         raise AppError(code="NO_COURSE_ID", message="课程不存在或缺少平台 cId", status_code=400)
 
+    accessible = course_service.get_accessible_course(db, user, course.id)
+    if not accessible:
+        raise AppError(code="FORBIDDEN", message="无权访问该课程", status_code=403)
+
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)
 
@@ -315,6 +319,10 @@ async def parse_replay(
     course = course_service.find_course_by_key(db, course_key)
     if not course:
         raise AppError(code="NOT_FOUND", message="课程不存在", status_code=404)
+
+    accessible = course_service.get_accessible_course(db, user, course.id)
+    if not accessible:
+        raise AppError(code="FORBIDDEN", message="无权访问该课程", status_code=403)
 
     if not user.platform_cookies:
         raise AppError(code="NO_PLATFORM_COOKIES", message="未找到平台登录凭证，请重新登录", status_code=400)

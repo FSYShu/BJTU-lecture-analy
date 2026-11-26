@@ -2,6 +2,7 @@ import { API_BASE_URL, authHeaders, client } from './client';
 import type { Task } from '@/types';
 
 export const getTask = (id: number) => client.get<Task>(`/tasks/${id}`).then((r) => r.data);
+export const listActiveTasks = () => client.get<Task[]>('/tasks/active').then((r) => r.data);
 export const getLatestTask = (lectureId: number) =>
   client.get<Task>(`/tasks/latest`, { params: { lecture_id: lectureId } }).then((r) => r.data);
 export const retryTask = (id: number) => client.post<Task>(`/tasks/${id}/retry`).then((r) => r.data);

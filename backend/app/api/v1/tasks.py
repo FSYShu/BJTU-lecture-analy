@@ -6,9 +6,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.db.models import Course, ParseTask, User
+from app.db.models import Course, Lecture, ParseTask, User
 from app.db.session import SessionLocal, get_db
-from app.schemas.task import TaskOut
+from app.schemas.task import ActiveTaskOut, TaskOut
 from app.pipeline import proc_registry
 from app.services import task_service, task_stream
 from app.workers.parse_worker import run as parse_worker_run
@@ -37,6 +37,47 @@ def get_latest_task(
     if not task:
         raise HTTPException(404, "该课程暂无解析任务")
     return task
+
+
+ACTIVE_TASK_STATUSES = (
+    "queued",
+    "downloading",
+    "extracting_audio",
+    "asr_running",
+    "llm_running",
+    "persisting",
+)
+
+
+@router.get("/active", response_model=list[ActiveTaskOut])
+def list_active_tasks(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[ActiveTaskOut]:
+    """列出排队中/进行中的解析任务，供右上角进度弹窗展示“正在解析哪个、还有哪些在排队”。"""
+    rows = (
+        db.query(ParseTask, Course.title, Lecture.teach_time_str)
+        .outerjoin(Course, Course.id == ParseTask.course_id)
+        .outerjoin(Lecture, Lecture.id == ParseTask.lecture_id)
+        .filter(ParseTask.status.in_(ACTIVE_TASK_STATUSES))
+        .order_by(ParseTask.id.asc())
+        .all()
+    )
+    return [
+        ActiveTaskOut(
+            id=task.id,
+            course_id=task.course_id,
+            lecture_id=task.lecture_id,
+            status=task.status,
+            progress=task.progress,
+            current_step=task.current_step,
+            error_code=task.error_code,
+            error_message=task.error_message,
+            retry_count=task.retry_count,
+            course_title=course_title,
+            teach_time_str=teach_time_str,
+        )
+        for task, course_title, teach_time_str in rows
+    ]
 
 
 @router.get("/{task_id}", response_model=TaskOut)
@@ -80,12 +121,17 @@ def retry_task(task_id: int, bg: BackgroundTasks, user: User = Depends(get_curre
 
 @router.post("/{task_id}/cancel", response_model=TaskOut)
 def cancel_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ParseTask:
-    """用户取消解析：标记 failed+CANCELLED，流水线在阶段切换处检测后退出。"""
+    """用户取消解析：标记 failed+CANCELLED 并终止正在运行的 ffmpeg。
+
+    即使任务已被标记为 failed（例如被启动清理误判），也可能仍有工作线程/ffmpeg
+    在运行，所以不能直接返回，必须继续终止子进程并让流水线在检查点退出。
+    """
     task = db.get(ParseTask, task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
-    if task.status in ("succeeded", "failed"):
+    if task.status == "succeeded":
         return task
-    task_service.mark_failed(db, task_id, "CANCELLED", "用户取消")
+    if task.status != "failed":
+        task_service.mark_failed(db, task_id, "CANCELLED", "用户取消")
     proc_registry.terminate(task_id)
     return db.get(ParseTask, task_id)

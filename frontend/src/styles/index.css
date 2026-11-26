@@ -9,3 +9,30 @@
 .dark .markmap foreignObject {
   color: #e5e7eb;
 }
+/* ArtPlayer 强制浅色主题 */
+.art-video-player,
+.art-video-player *,
+.art-video-player *::before,
+.art-video-player *::after {
+  color-scheme: light !important;
+}
+/* ArtPlayer 字幕位置 + 字体大小 */
+.art-video-player {
+  --art-subtitle-font-size: 22px;
+}
+.art-video-player video::cue {
+  line: 85%;
+  font-size: 22px;
+}
+/* ArtPlayer 全屏/网页全屏字幕：上移避开控制栏 + 字体放大 */
+.art-video-player:fullscreen,
+.art-video-player.art-fullscreen,
+.art-video-player.art-fullscreen-web {
+  --art-subtitle-font-size: 36px;
+}
+.art-video-player:fullscreen video::cue,
+.art-video-player.art-fullscreen video::cue,
+.art-video-player.art-fullscreen-web video::cue {
+  line: 78%;
+  font-size: 36px;
+}

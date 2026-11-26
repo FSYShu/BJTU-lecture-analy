@@ -46,7 +46,7 @@ def run_pipeline(task_id: int) -> None:
         # ---------- Step 1 元数据（含平台字幕/知识点预取） ----------
         _ensure_deadline(deadline)
         _check_cancelled(db, task_id)
-        task_service.update_status(db, task_id, "downloading", 5, "metadata")
+        task_service.update_status(db, task_id, "downloading", 2, "metadata")
         logger.info("[task={}] Step 1/6 元数据", task_id)
         ctx = metadata.fetch_metadata(db, task.course_id)
         course = ctx.course
@@ -70,20 +70,21 @@ def run_pipeline(task_id: int) -> None:
         audio_path: str | None = None
         if db_transcripts:
             transcripts = db_transcripts
-            task_service.update_status(db, task_id, "asr_running", 50, "asr")
+
         else:
             # ---------- Step 2+3 直接从 URL 提取音频（跳过完整视频下载） ----------
             _check_cancelled(db, task_id)
-            task_service.update_status(db, task_id, "downloading", 10, "download")
+            task_service.update_status(db, task_id, "extracting_audio", 2, "audio")
             audio_path = _reuse_cached(task.audio_cache_path)
             if not audio_path:
-                task_service.update_status(db, task_id, "extracting_audio", 12, "audio")
                 logger.info("[task={}] Step 2/6 提取音频（ffmpeg 16kHz WAV）", task_id)
 
                 def _on_audio_progress(out_time: str, speed: str, size_kb: int):
                     _check_cancelled(db, task_id)
                     detail = f"audio|{out_time}|{speed}x|{size_kb}KB"
-                    task_service.update_status(db, task_id, "extracting_audio", None, detail)
+                    out_sec = _parse_out_time(out_time)
+                    sub_pct = min(35, int(out_sec / 3600 * 35))
+                    task_service.update_status(db, task_id, "extracting_audio", 2 + sub_pct, detail)
 
                 audio_path = download.download_audio_from_url(
                     course.video_url, task.id, progress_callback=_on_audio_progress,
@@ -92,17 +93,17 @@ def run_pipeline(task_id: int) -> None:
                 db.commit()
                 audio_mb = Path(audio_path).stat().st_size / 1024 / 1024
                 logger.info("[task={}] 音频提取完成：{} ({:.1f}MB)", task_id, audio_path, audio_mb)
-            task_service.update_status(db, task_id, "extracting_audio", 20, "audio")
+            task_service.update_status(db, task_id, "extracting_audio", 37, "audio")
 
             # ---------- Step 4 转写：优先平台 VTT，否则 ASR ----------
             _ensure_deadline(deadline)
             _check_cancelled(db, task_id)
-            task_service.update_status(db, task_id, "asr_running", 25, "asr")
+            task_service.update_status(db, task_id, "asr_running", 37, "asr")
             if reused["transcripts"]:
                 logger.info("[task={}] Step 3/6 转写（复用父任务）", task_id)
             transcripts = reused["transcripts"] or _resolve_transcripts(ctx, audio_path, task_id, db, task_id)
             logger.info("[task={}] 转写完成：{} 句", task_id, len(transcripts))
-            task_service.update_status(db, task_id, "asr_running", 50, "asr")
+            task_service.update_status(db, task_id, "asr_running", 67, "asr")
 
         # ---------- 转写完成立即落库 ----------
         if not reused["complete"] and not db_transcripts:
@@ -112,13 +113,14 @@ def run_pipeline(task_id: int) -> None:
         # ---------- Step 5 大模型语义解析（每子任务完成即落库） ----------
         _ensure_deadline(deadline)
         _check_cancelled(db, task_id)
-        task_service.update_status(db, task_id, "llm_running", 55, "llm")
+        llm_start_pct = 2 if db_transcripts else 67
+        task_service.update_status(db, task_id, "llm_running", llm_start_pct, "llm")
         failures: list[str] = []
         if reused["complete"]:
             logger.info("[task={}] Step 4/6 LLM（复用父任务 {}）", task_id, task.parent_task_id)
             _ensure_deadline(deadline)
             _check_cancelled(db, task_id)
-            task_service.update_status(db, task_id, "persisting", 90, "persist")
+            task_service.update_status(db, task_id, "persisting", 100, "persist")
             kp = llm.link_source_transcripts(reused["keypoints"], transcripts)
             kp = platform_assets.align_keypoints(kp, ctx.zsd_items)
             persist.save_results(db, task_id, task.course_id, transcripts, kp, reused["summary"], reused["mindmap"], lecture_id=task.lecture_id)
@@ -142,7 +144,7 @@ def run_pipeline(task_id: int) -> None:
                     persist.save_mindmap(db, task_id, task.course_id, result, lecture_id=task.lecture_id)
                     logger.info("[task={}] 导图已落库", task_id)
                 llm_done += 1
-                pct = 55 + int(35 * llm_done / llm_total)
+                pct = llm_start_pct + int((100 - llm_start_pct) * llm_done / llm_total)
                 task_service.update_status(db, task_id, "llm_running", pct, f"llm|{key}")
 
             _, _, _, failures = llm.run_llm(
@@ -185,6 +187,19 @@ def run_pipeline(task_id: int) -> None:
 # --------------------------------------------------------------------------- #
 # 内部工具
 # --------------------------------------------------------------------------- #
+def _parse_out_time(out_time: str) -> float:
+    """解析 ffmpeg out_time（HH:MM:SS.us）为秒数。"""
+    try:
+        parts = out_time.split(":")
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+        return float(out_time)
+    except (ValueError, IndexError):
+        return 0.0
+
+
 def _ensure_deadline(deadline: float) -> None:
     if time.monotonic() > deadline:
         raise StepError(
@@ -195,10 +210,18 @@ def _ensure_deadline(deadline: float) -> None:
 
 
 def _check_cancelled(db: Session, task_id: int) -> None:
-    """用户取消后任务被标记为 failed+CANCELLED，流水线在阶段切换处主动检查并退出。"""
+    """任务被取消/判定失败后，流水线在阶段切换与进度回调处主动检查并退出。"""
     task = db.get(ParseTask, task_id)
-    if task and task.status == "failed" and task.error_code == "CANCELLED":
-        raise StepError("CANCELLED", "用户取消", step="orchestrator")
+    if not task:
+        return
+    # 其他请求（取消接口）在独立 Session 中提交，这里强制刷新以读到最新状态
+    db.refresh(task)
+    if task.status == "failed":
+        raise StepError(
+            task.error_code or "CANCELLED",
+            task.error_message or "任务已被取消",
+            step="orchestrator",
+        )
 
 
 def _reuse_cached(path: str | None) -> str | None:
@@ -229,7 +252,7 @@ def _resolve_transcripts(ctx: CourseContext, audio_path: str, task_id: int, db: 
 
     def on_progress(current, total, msg):
         _check_cancelled(db, tid)
-        pct = 25 + int(25 * current / max(1, total))
+        pct = 37 + int(30 * current / max(1, total))
         if db and tid:
             detail = f"asr|{current}/{total}|{msg or ''}"
             task_service.update_status(db, tid, "asr_running", pct, detail)

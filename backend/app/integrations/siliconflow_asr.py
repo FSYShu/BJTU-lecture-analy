@@ -188,27 +188,40 @@ def _transcribe_wave(path: Path, progress_callback=None) -> list[dict]:
             chunk_path.unlink(missing_ok=True)
             return idx, part
 
+        failed_chunks: list[tuple[int, Path, float, float]] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-            futures: dict[concurrent.futures.Future, int] = {}
+            futures: dict[concurrent.futures.Future, tuple[int, Path, float, float]] = {}
             while True:
                 item = chunk_queue.get()
                 if item is None:
                     break
                 idx, chunk_path, start_sec, end_sec = item
                 future = executor.submit(_do_transcribe, idx, chunk_path, start_sec, end_sec)
-                futures[future] = idx
+                futures[future] = (idx, chunk_path, start_sec, end_sec)
 
             for future in concurrent.futures.as_completed(futures):
-                idx = futures[future]
+                idx, chunk_path, start_sec, end_sec = futures[future]
                 try:
                     i, part = future.result()
                     results[i] = part
                 except Exception as exc:  # noqa: BLE001
-                    logger.error("[asr] 分片 {} 转写失败：{}", idx + 1, exc)
-                    raise
+                    logger.error("[asr] 分片 {} 转写失败，稍后重试：{}", idx + 1, exc)
+                    failed_chunks.append((idx, chunk_path, start_sec, end_sec))
                 completed += 1
                 if progress_callback:
                     progress_callback(completed, total, f"ASR {completed}/{total}")
+
+        for idx, chunk_path, start_sec, end_sec in failed_chunks:
+            logger.warning("[asr] 分片 {} 重试中（串行）...", idx + 1)
+            try:
+                payload = _request_transcription(http_pool.get_client(), chunk_path)
+                part = _sentences_from_payload(payload, offset=start_sec, chunk_end=end_sec)
+                results[idx] = part
+                chunk_path.unlink(missing_ok=True)
+                logger.info("[asr] 分片 {} 重试成功：{} 句", idx + 1, len(part))
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[asr] 分片 {} 重试仍失败，跳过：{}", idx + 1, exc)
+                results[idx] = []
 
         producer_thread.join()
         if producer_error:

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import Player, { SeekContext } from '@/components/Player';
 import Subtitle from '@/components/Subtitle';
 import Keypoints from '@/components/Keypoints';
 import SummaryView from '@/components/Summary';
 import MindmapView from '@/components/Mindmap';
+import CourseSidebar from '@/components/CourseSidebar';
 import { getCourse, fetchReplays, parseReplay, fetchReplayStream } from '@/api/courses';
 import { getLectureOverview, listTranscripts } from '@/api';
 import { getTask } from '@/api/tasks';
@@ -19,6 +20,8 @@ const ACTIVE_STATUSES = new Set(['queued', 'downloading', 'extracting_audio', 'a
 
 export default function CourseDetail() {
   const { courseKey = '' } = useParams<{ courseKey: string }>();
+  const [searchParams] = useSearchParams();
+  const replayParam = searchParams.get('replay');
   const [course, setCourse] = useState<Course | null>(null);
   const [currentSec, setCurrentSec] = useState(0);
   const currentSecRef = useRef(0);
@@ -34,9 +37,11 @@ export default function CourseDetail() {
   const [selectedReplayId, setSelectedReplayId] = useState<number | null>(null);
 
   const [replayVideoUrl, setReplayVideoUrl] = useState<string>('');
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [loadingStream, setLoadingStream] = useState<number | null>(null);
   const setTask = useTaskStore((s) => s.setTask);
   const parseQueueRef = useRef<Replay[]>([]);
+
 
   // 任务订阅：当前在看哪个课次、订阅哪个任务
   const [activeLectureId, setActiveLectureId] = useState<number | null>(null);
@@ -77,6 +82,7 @@ export default function CourseDetail() {
 
   /** 发起解析：调 parseReplay 后写入全局 task store 并订阅。 */
   const startParse = async (r: Replay) => {
+    useTaskStore.getState().removeParseQueue(r.id);
     try {
       const res: Task = await parseReplay(courseKey, r.id);
       setTask(res);
@@ -95,6 +101,7 @@ export default function CourseDetail() {
     if (running) {
       if (!parseQueueRef.current.some((q) => q.id === r.id)) {
         parseQueueRef.current.push(r);
+        useTaskStore.getState().addParseQueue(r.id);
       }
     } else {
       void startParse(r);
@@ -147,13 +154,28 @@ export default function CourseDetail() {
   useEffect(() => {
     let cancelled = false;
 
+    setCourse(null);
+    setReplays([]);
+    setReplayVideoUrl('');
+    setSelectedReplayId(null);
+    setTranscripts([]);
+    setKeypoints([]);
+    setSummary(null);
+    setMindmap(null);
+    setActiveLectureId(null);
+    setActiveTaskId(null);
+    setLoadingReplays(true);
+    setTask(null);
+    parseQueueRef.current = [];
+    useTaskStore.getState().clearParseQueue();
+
     const restoredSec = loadCurrentSec(courseKey);
     setCurrentSec(restoredSec);
     currentSecRef.current = restoredSec;
     lastSaveSecRef.current = restoredSec;
 
     const cached = useCourseCacheStore.getState().cache[courseKey];
-    if (cached && cached.course) {
+    if (cached && cached.course && cached.replays.length > 0) {
       setCourse(cached.course);
       setTranscripts(cached.transcripts);
       setKeypoints(cached.keypoints);
@@ -167,6 +189,10 @@ export default function CourseDetail() {
       lastStepRef.current = cached.lastStep;
       setLoadingReplays(false);
 
+      if (cached.activeLectureId) {
+        refreshAll(cached.activeLectureId);
+      }
+
       if (cached.activeTaskId) {
         getTask(cached.activeTaskId)
           .then((t) => {
@@ -176,9 +202,7 @@ export default function CourseDetail() {
               lastStepRef.current = t.current_step ?? null;
             } else {
               setActiveTaskId(null);
-              if (t.status === 'succeeded' && cached.activeLectureId) {
-                refreshAll(cached.activeLectureId);
-              } else {
+              if (t.status !== 'succeeded') {
                 setTask(null);
               }
             }
@@ -203,7 +227,10 @@ export default function CourseDetail() {
         setReplays(reversed);
         setLoadingReplays(false);
         if (reversed.length > 0) {
-          const first = reversed[0];
+          const target = replayParam
+            ? reversed.find(r => String(r.id) === replayParam)
+            : null;
+          const first = target || reversed[0];
           setSelectedReplayId(first.id);
 
           setLoadingStream(first.id);
@@ -227,7 +254,7 @@ export default function CourseDetail() {
             if (cancelled) return;
             const latest = overview?.task ?? null;
             watchTask(latest);
-            const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap || (overview?.transcript_meta?.total ?? 0) > 0;
+            const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap;
             const isActive = latest && ACTIVE_STATUSES.has(latest.status);
             if (!isActive && !hasResult) {
               enqueueParse(first);
@@ -266,6 +293,7 @@ export default function CourseDetail() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [courseKey]);
+
 
   const handleTimeUpdate = useCallback((t: number) => {
     setCurrentSec(t);
@@ -306,8 +334,12 @@ export default function CourseDetail() {
     if (lid) {
       setActiveLectureId(lid);
       const latest = overview?.task ?? null;
-      watchTask(latest);
-      const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap || (overview?.transcript_meta?.total ?? 0) > 0;
+      if (latest && ACTIVE_STATUSES.has(latest.status)) {
+        watchTask(latest);
+      } else {
+        setTask(null);
+      }
+      const hasResult = (overview?.keypoints?.length ?? 0) > 0 || !!overview?.summary || !!overview?.mindmap;
       const isActive = latest && ACTIVE_STATUSES.has(latest.status);
       if (!isActive && !hasResult) {
         enqueueParse(r);
@@ -323,87 +355,85 @@ export default function CourseDetail() {
     }
   };
 
+  useEffect(() => {
+    if (!replayParam || replays.length === 0) return;
+    const target = replays.find(r => String(r.id) === replayParam);
+    if (target && target.id !== selectedReplayId) {
+      handleSelectReplay(target);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayParam, replays]);
+
 
   const videoUrl = replayVideoUrl || course?.video_url || '';
+  const hasParseResult = keypoints.length > 0 || !!summary || !!mindmap;
 
   return (
     <SeekContext.Provider value={seek}>
-      <div className="space-y-6">
+      <div className="flex gap-6 h-full overflow-hidden">
+        <CourseSidebar selectedReplayId={selectedReplayId} expanded={sidebarExpanded} onExpandedChange={setSidebarExpanded} replays={replays} />
+        <div className="flex-1 min-w-0 space-y-6 py-6 pr-6 overflow-y-auto">
         <div className="flex items-center gap-4 min-w-0">
-          <Link to="/" className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 shrink-0">← 返回</Link>
+
           <h1 className="text-2xl font-bold truncate">{course?.title ?? '课程详情'}</h1>
           {course && (
             <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">
               {course.teacher_name} · {course.session_label}
             </span>
           )}
+          <button
+            onClick={() => {
+              const r = replays.find((rp) => rp.id === selectedReplayId);
+              if (r) enqueueParse(r);
+            }}
+            disabled={!selectedReplayId}
+            className="ml-auto shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title={hasParseResult ? "重新生成 AI 解析" : "生成 AI 解析"}
+          >
+            {hasParseResult && (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2v6h-6" />
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                <path d="M3 22v-6h6" />
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+              </svg>
+            )}
+            {hasParseResult ? "重新生成" : "生成"}
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className={`grid grid-cols-1 ${sidebarExpanded ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4 lg:gap-6`}>
           {/* 左侧：播放器 + 字幕 + 课程概览 */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-black">
+          <div className={`${sidebarExpanded ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-4`}>
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-black" style={{ colorScheme: 'light' }}>
               <Player src={videoUrl} transcripts={transcripts} loading={loadingReplays || loadingStream !== null} initialTime={currentSec} onTimeUpdate={handleTimeUpdate} onSeekReady={(s) => setSeek(() => s)} />
             </div>
-            {transcripts.length > 0 && (
-              <Subtitle transcripts={transcripts} currentSec={currentSec} />
-            )}
-            {summary && <SummaryView summary={summary} />}
-          </div>
-
-          {/* 右侧：回放列表 + 重点 + 导图 */}
-          <div className="space-y-4">
-            {replays.length > 0 && (
-              <div className="space-y-2">
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">回放列表</h2>
-                <div className="space-y-1">
-                  {replays.map((r) => (
-                    <div
-                      key={r.id}
-className={`w-full border rounded-lg px-3 py-2 transition-all text-left ${
-                          selectedReplayId === r.id
-                            ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/40 dark:border-primary-500'
-                            : 'border-gray-200 dark:border-gray-700 dark:bg-gray-800 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-500'
-                        }`}
-                    >
-                      <button
-                        onClick={() => handleSelectReplay(r)}
-                        disabled={loadingStream !== null}
-                        className="w-full text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                          {r.teach_time_str || (r.class_begin_time?.split(' ')[0] ?? '—')}
-                        </div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500">
-                          {r.course_between || ''}
-                        </div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500">
-                          {r.class_room || ''}
-                        </div>
-                        {loadingStream === r.id && (
-                          <div className="text-xs text-primary-600 dark:text-primary-400 mt-1">加载视频中...</div>
-                        )}
-                      </button>
-                      {r.has_result && (
-                        <button
-                          onClick={() => enqueueParse(r)}
-                          className="mt-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
-                        >
-                          重新生成
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            <Subtitle transcripts={transcripts} currentSec={currentSec} />
+            {mindmap ? (
+              <MindmapView mindmap={mindmap} />
+            ) : (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                <h3 className="font-semibold text-base mb-1">思维导图</h3>
+                <div className="text-gray-400 dark:text-gray-500 text-sm text-center py-8">解析完成后自动生成</div>
               </div>
             )}
-            {keypoints.length > 0 && (
-              <Keypoints keypoints={keypoints} currentSec={currentSec} />
+          </div>
+
+          {/* 右侧：重点 + 总结 */}
+          <div className="space-y-4">
+            <Keypoints keypoints={keypoints} currentSec={currentSec} />
+            {summary ? (
+              <SummaryView summary={summary} />
+            ) : (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                <h3 className="font-semibold text-base mb-1">课程概览</h3>
+                <div className="text-gray-400 dark:text-gray-500 text-sm text-center py-8">解析完成后自动生成</div>
+              </div>
             )}
-            {mindmap && <MindmapView mindmap={mindmap} />}
           </div>
         </div>
 
+        </div>
       </div>
     </SeekContext.Provider>
   );

@@ -34,9 +34,14 @@ export default function Keypoints({ keypoints, currentSec, onSeek }: KeypointsPr
     return id;
   }, [keypoints, currentSec]);
 
+  const hasAi = keypoints.some((k) => k.ai_generated);
+
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
-      <div className="px-4 py-2 border-b dark:border-gray-700 text-sm font-medium">重点列表</div>
+      <div className="flex items-center gap-2 px-4 py-2 border-b dark:border-gray-700">
+        <span className="text-sm font-medium">重点列表</span>
+        {hasAi && <span className="text-[10px] text-accent-500 dark:text-accent-200 bg-accent-50 dark:bg-accent-700/30 px-1 rounded">AI</span>}
+      </div>
       <div className="h-64 overflow-y-auto">
         {keypoints.length === 0 ? (
           <Empty text="暂无可用重点" />
@@ -68,7 +73,6 @@ export default function Keypoints({ keypoints, currentSec, onSeek }: KeypointsPr
                   </span>
                 )}
                 <span className="font-medium text-gray-800 dark:text-gray-100">{k.title}</span>
-                {k.ai_generated && <span className="text-[10px] text-accent-500 dark:text-accent-200 bg-accent-50 dark:bg-accent-700/30 px-1 rounded">AI</span>}
               </div>
               {k.summary && <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">{k.summary}</div>}
             </div>
